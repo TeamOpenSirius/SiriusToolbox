@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+**/publish/
+artifacts/
+output/
+TestResults/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.DotSettings.user
+*.log
+*.tmp
+state.json
+publication.json

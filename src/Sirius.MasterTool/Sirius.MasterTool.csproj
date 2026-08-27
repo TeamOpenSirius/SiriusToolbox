@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Sirius.MasterTool</AssemblyName>
+    <RootNamespace>Sirius.MasterTool</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sirius.Tooling.Core\Sirius.Tooling.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\Sirius.Tooling.Core\Schema\table.json"
+          Link="data\table.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
