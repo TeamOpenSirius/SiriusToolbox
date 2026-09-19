@@ -1,17 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <AssemblyName>Sirius.MasterTool</AssemblyName>
     <RootNamespace>Sirius.MasterTool</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Sirius.Tooling.Core\Sirius.Tooling.Core.csproj" />
+    <ProjectReference Include="..\Sirius.Toolbox\Sirius.Toolbox.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\Sirius.Tooling.Core\Schema\table.json"
-          Link="data\table.json"
-          CopyToOutputDirectory="PreserveNewest" />
+    <PackageReference Include="MagicOnion.Abstractions" />
+    <PackageReference Include="MasterMemory" />
+    <Reference Include="Sirius.Protocol">
+      <HintPath>..\..\lib\Sirius.Protocol.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
 </Project>

@@ -1,6 +1,6 @@
 using System.Net.Http.Headers;
-using Sirius.Tooling.Core.Master.Protocol;
-using Sirius.Tooling.Core.Master.Serialization;
+using Sirius.Toolbox.Master.Protocol;
+using Sirius.Toolbox.Master.Serialization;
 
 namespace Sirius.MasterTool;
 

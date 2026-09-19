@@ -1,85 +1,89 @@
 # Repository Architecture
 
-SiriusTools is organized as a single .NET solution with two command-line applications and one shared library.
+SiriusTools is organized as one .NET solution with two CLI applications, one WinForms application, and two shared libraries.
 
 ## Dependency graph
 
 ```text
-                    ┌─────────────────────┐
-                    │ Sirius.MasterTool   │
-                    └──────────┬──────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │ Sirius.Tooling.Core │
-                    └─────────────────────┘
-                               ▲
-                               │
-                    ┌──────────┴──────────┐
-                    │ Sirius.AssetTool    │
-                    └─────────────────────┘
+Sirius.MasterTool ───┐
+                     ├──> Sirius.MasterData ───> Sirius.Tooling.Core
+Sirius.ToolboxUI  ────┘             │
+                                   └──> lib/Sirius.Protocol.dll
+
+Sirius.AssetTool ─────────────────────> Sirius.Tooling.Core
+Sirius.ToolboxUI ────────────────────> Sirius.AssetTool
+                                      └── R2 MasterData/CDN sync (S3/SigV4)
 ```
 
-The dependency direction is intentionally one-way. Shared protocol and codec code belongs in `Sirius.Tooling.Core`; command-line orchestration remains in the executable projects.
+The MasterMemory dependency is intentionally isolated in `Sirius.MasterData`. Chart and episode tooling does not pull in WinForms or the generated MasterMemory model assembly.
 
 ## Sirius.Tooling.Core
 
-`Sirius.Tooling.Core` contains reusable format and persistence code without owning a command-line entry point or HTTP synchronization workflow.
+Reusable non-UI infrastructure:
 
-### Master
+- Master API MessagePack contracts and serialization;
+- synchronization state/publication persistence;
+- episode MessagePack wire contracts and codecs;
+- atomic file replacement helpers.
 
-`Master/` provides:
+It does not reference any executable/UI project or `Sirius.Protocol.dll`.
 
-- MessagePack protocol DTOs for Environment, account authentication, login, and the MasterData manifest;
-- request and response MessagePack serialization;
-- MasterMemory table parsing and schema-based JSON mapping;
-- synchronization state persistence in `state.json`;
-- publication metadata persistence in `publication.json`.
+## Sirius.MasterData
 
-### Episodes
+Shared typed MasterMemory data layer used by both MasterTool and ToolboxUI.
 
-`Episodes/` provides:
+It owns:
 
-- MessagePack wire contracts for episode scene records;
-- JSON wrapper parsing;
-- LZ4BlockArray MessagePack serialization and deserialization;
-- round-trip verification;
-- JSON output for unpacked scene records.
+- loading tables through `Sirius.Protocol.Shared.MemoryDatabase`;
+- generated metadata/schema discovery;
+- table/record listing and primary-key lookup;
+- add/update/delete;
+- changed-table-only MasterMemory binary rebuild;
+- full database re-load and generated validation after writes;
+- JSON export and localization CSV workflows.
 
-### IO
-
-`IO/AtomicFile.cs` provides atomic-style replacement for generated text and binary files.
-
-### Schema
-
-`Schema/table.json` describes class fields and enum values used when converting positional MasterMemory MessagePack data into readable JSON objects.
+`Sirius.MasterData` is the only Toolbox project that directly references the supplied generated `lib/Sirius.Protocol.dll` and MasterMemory runtime packages.
 
 ## Sirius.MasterTool
 
-`Sirius.MasterTool` owns network synchronization and command-line configuration.
+Owns network synchronization and CLI presentation. MasterMemory CLI commands delegate to `Sirius.MasterData`.
 
-Its main flow is:
+Synchronization flow:
 
 ```text
 CLI options
   -> fetch Environment
   -> resolve API endpoint and asset version
   -> load/reuse/register account credentials
-  -> authenticate
-  -> login
+  -> authenticate/login
   -> fetch /api/data/master
-  -> compare local MasterData version
   -> download/resume mastermemory.db when required
-  -> write local manifest and state
-  -> export tables to JSON when enabled
+  -> write local manifest/state
+  -> optionally export typed JSON
   -> write publication.json
 ```
 
-Network behavior is concentrated in `Networking/SiriusApiClient.cs`; shared wire models and serializers come from `Sirius.Tooling.Core`.
+## Sirius.ToolboxUI
+
+Chinese Windows Forms toolbox with a start center and separate MasterData, Chart, Episode, scene-cache, Episode-editor, and one combined MasterData/CDN/R2-sync child window.
+
+```text
+mastermemory.db
+  -> temporary working copy
+  -> Sirius.MasterData table/schema/record API
+  -> paged DataGridView + JSON record editor
+  -> add/update/delete on working copy
+  -> full validation
+  -> Save / Save As (+ .bak when overwriting)
+```
+
+The UI never implements its own binary serializer or duplicate DTOs. CLI and GUI therefore use the same conversion, key parsing, rebuild, validation, chart, and episode service behavior.
+
+The combined sync window and `Sirius.AssetTool r2 sync` command share `R2AssetSyncService`, including MasterData, the old catalog/CDN discovery rules, `r2-object-map.tsv`, `r2-hash-cache.json`, concurrent uploads, retries, and remote SHA-256 skipping. The legacy `r2 masterdata` CLI remains available for scripts, while both CLI paths delegate signed HEAD/PUT requests to the S3-compatible client in AssetTool.
 
 ## Sirius.AssetTool
 
-`Sirius.AssetTool` is entirely local and exposes two command groups.
+Entirely local chart/episode tooling.
 
 ### Chart pipeline
 
@@ -94,8 +98,6 @@ SUS file
   -> ENC file
 ```
 
-The decode path performs the inverse cryptographic and compression operations and writes UTF-8 plaintext.
-
 ### Episode pipeline
 
 ```text
@@ -106,21 +108,25 @@ JSON wrapper or EpisodeDetail[]
   -> scene BIN
 ```
 
-Unpacking deserializes the binary array and writes a JSON object containing `EpisodeId` and `EpisodeDetail`.
+The cache/editor pipeline stays in the reusable Episode service layer:
 
-## Repository-wide configuration
+```text
+Episode JSON directory + scene BIN directory
+  -> SceneAssetCacheService
+  -> Version 2 scene-assets.json
 
-`Directory.Build.props` defines the common .NET 10 compiler and Release settings. `Directory.Packages.props` enables central package version management.
-
-Only `Sirius.Tooling.Core` directly references `MessagePack`; the executable projects access MessagePack-based behavior through the shared library.
+Episode JSON wrapper/array
+  -> EpisodeEditorService (preserve wrapper metadata)
+  -> readable JSON or EpisodeCodec
+  -> verified scene BIN
+```
 
 ## Boundary rules
 
-When adding code, keep these boundaries:
-
-1. Network calls, CLI parsing, and synchronization policy belong to `Sirius.MasterTool`.
-2. SUS parsing and chart-specific conversion belong to `Sirius.AssetTool`.
-3. Episode command presentation and file diagnostics belong to `Sirius.AssetTool`.
-4. Shared wire contracts, codecs, schema mapping, and reusable persistence belong to `Sirius.Tooling.Core`.
-5. `Sirius.Tooling.Core` must not reference either executable project.
-6. `Sirius.MasterTool` and `Sirius.AssetTool` must not reference each other.
+1. Official API synchronization policy stays in `Sirius.MasterTool`; the explicitly local R2 publication command stays with its reusable AssetTool service.
+2. WinForms presentation stays in `Sirius.ToolboxUI`.
+3. Typed MasterMemory operations shared by CLI/UI stay in `Sirius.MasterData`.
+4. SUS/chart-specific conversion stays in `Sirius.AssetTool`.
+5. Episode command presentation, cache discovery, editor persistence, and file diagnostics stay in `Sirius.AssetTool`; reusable wire codecs stay in `Sirius.Tooling.Core`.
+6. `Sirius.Tooling.Core` must not reference applications or generated MasterMemory models.
+7. `Sirius.AssetTool` must not reference MasterTool, ToolboxUI, or MasterData.

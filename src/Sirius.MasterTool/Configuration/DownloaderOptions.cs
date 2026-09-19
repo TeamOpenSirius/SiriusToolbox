@@ -15,7 +15,6 @@ internal sealed class DownloaderOptions
     public bool InsecureTls { get; set; }
     public bool Force { get; set; }
     public bool ExportJson { get; set; } = true;
-    public string? TableSchemaPath { get; set; }
     public bool SyncMode { get; set; }
 
     public string AuthenticationApplicationVersion => ApplicationVersion + AuthenticationVersionSuffix;

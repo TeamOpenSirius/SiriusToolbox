@@ -5,6 +5,7 @@
 ```text
 Sirius.AssetTool chart   SUS conversion and chart ENC processing
 Sirius.AssetTool episode Episode scene JSON/BIN processing
+Sirius.AssetTool r2      Cloudflare R2 MasterData/CDN full sync
 ```
 
 ## Build
@@ -22,6 +23,52 @@ dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- --help
 ```
 
 Set `SIRIUS_ASSET_TOOL_DEBUG=1` to print full exception details when a command fails.
+
+## R2 主数据上传
+
+上传命令只处理主数据发布目录中的 `master/mastermemory.db`。它读取同目录的 `master/manifest.json`，将 `Uri` 映射为 `master-data/production/...` 对象键，并把 SHA-256 写入 `x-amz-meta-sha256`。没有 `--force` 时，如果远端长度和 SHA-256 都一致则跳过上传。
+
+先使用预览模式检查映射；预览模式不会读取文件哈希，也不会发出网络请求：
+
+```powershell
+dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- r2 masterdata .\output --dry-run
+```
+
+实际上传使用 R2 API 令牌对应的 S3 访问密钥。建议通过环境变量提供凭据，避免把秘密写入命令历史：
+
+```powershell
+$env:R2_ACCESS_KEY_ID = '<access-key-id>'
+$env:R2_SECRET_ACCESS_KEY = '<secret-access-key>'
+dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- r2 masterdata .\output `
+  --endpoint 'https://<account-id>.r2.cloudflarestorage.com' `
+  --bucket '<bucket>'
+```
+
+支持 `--prefix`、`--retries`、`--force`、`--session-token`；CLI 也兼容旧式 `--r2-sync --dir <输出目录>` 以及 `--r2-endpoint`、`--r2-bucket`、`--r2-prefix`、`--r2-retries`、`--r2-force` 和 `--r2-dry-run`。Endpoint、区域和 PUT 行为参照 [Cloudflare R2 S3 API](https://developers.cloudflare.com/r2/api/s3/api/)。
+
+### `r2 sync`
+
+完整同步会按旧 AssetTool 的规则发现并上传：
+
+- `master/manifest.json` + `master/mastermemory.db` → `master-data/production/...`；
+- `assets/catalogs/<category>/<platform>/catalog_<version>.*` → `production/<category>/<platform>/<version>/...`；
+- `assets/files/<category>/<origin-host>/<path>` → `production/<path>`；
+- `assets/files/scenes/...` → `master-data/production/scenes/...`；
+- `assets/files/notations/...` → `production/Notations/...`。
+
+先生成完整映射：
+
+```powershell
+dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- r2 sync .\output --dry-run
+```
+
+正式同步：
+
+```powershell
+dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- r2 sync .\output --concurrency 16 --retries 5
+```
+
+正式同步会使用 `assets/r2-hash-cache.json`，优先复用文件长度/修改时间仍匹配的 SHA-256，并通过远端 `HEAD` 的大小和 `x-amz-meta-sha256` 跳过未变化对象。GUI 中的 “主数据 / CDN / R2 全量同步” 会在同一次操作中包含 MasterData，并提供相同选项和映射表。
 
 ## Chart commands
 
@@ -173,6 +220,16 @@ The generated JSON contains:
 
 `EpisodeId` is taken from the first detail record, or `0` for an empty array.
 
+### `episode unpack-dir`
+
+Recursively unpack every `*.bin` file below a directory and preserve its relative structure:
+
+```powershell
+dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- episode unpack-dir scene-bin -o episode-json-restored
+```
+
+The output extension changes to `.json`. If `-o` is omitted, the tool uses the input directory with a `-json` suffix. Each file is processed independently; the command returns exit code `2` if one or more files fail.
+
 ### `episode inspect`
 
 ```powershell
@@ -181,6 +238,18 @@ dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- episode i
 
 `inspect` reports file size, counts UTF-8 replacement-byte sequences (`EF BF BD`), attempts MessagePack deserialization, and prints basic record information when successful. It returns exit code `2` when the binary appears text-corrupted or cannot be deserialized.
 
+### `episode cache`
+
+Build a Version 2 `scene-assets.json`-compatible cache from an Episode JSON directory and a scene BIN directory:
+
+```powershell
+dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- episode cache .\episode-json .\scene-bin -o .\scene-assets.json
+```
+
+The scan is recursive. BIN file names must be numeric IDs; matching JSON is found by wrapper `EpisodeId` or the first detail's `EpisodeMasterId`. Unmatched BIN files remain in the cache with an empty `SourcePath`, while duplicate numeric IDs fail the build before output is written. Use `--metadata-only` to record file size and timestamp without reading file contents, or provide `--master-data-version` and `--source-revision` for cache provenance.
+
+The cache records `Version`, `MasterDataVersion`, `SourceRevision`, `GeneratedAt`, and per-asset `RelativePath`, `FileName`, `Sha256`, `GitObjectId`, `HashAlgorithm`, `SourcePath`, `MetadataOnly`, `FileSize`, and `LastWriteTimeUtcTicks`. Local generation leaves `GitObjectId` empty because it does not invoke Git.
+
 ### Overwrite behavior
 
-`pack`, `pack-dir`, and `unpack` refuse to replace an existing output file unless `-f` or `--force` is supplied.
+`pack`, `pack-dir`, `unpack`, `unpack-dir`, and `cache` refuse to replace an existing output file unless `-f` or `--force` is supplied.

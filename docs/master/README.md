@@ -1,32 +1,26 @@
 # Sirius.MasterTool
 
-`Sirius.MasterTool` synchronizes World Dai Star MasterData and optionally exports the downloaded MasterMemory database into readable per-table JSON files.
+`Sirius.MasterTool` synchronizes World Dai Star MasterData and provides typed CLI operations for `mastermemory.db`.
+
+MasterMemory tables are loaded through the generated `Sirius.Protocol.Shared.MemoryDatabase` contained in `lib/Sirius.Protocol.dll`. The Toolbox no longer maintains a duplicate MasterMemory model or `table.json` schema.
 
 ## Capabilities
 
-- fetch the current Environment configuration;
-- register an account when no reusable LoginToken is available;
-- authenticate and cache access credentials;
-- retry authentication once when login returns HTTP 440;
-- fetch `/api/data/master`;
-- skip an unchanged MasterData version unless forced;
-- resume interrupted database downloads with HTTP Range requests;
-- keep a backup before replacing an existing `mastermemory.db`;
-- calculate and store SHA-256 metadata;
-- export MasterMemory tables through `table.json`;
-- persist local synchronization state and publication metadata.
+- synchronize the current official `mastermemory.db`;
+- export every table to readable JSON using `Sirius.Protocol` property names and types;
+- list tables, schemas, and records;
+- read records by primary key;
+- add, update, and delete records;
+- rebuild only changed table blocks while preserving untouched table blocks;
+- validate every rewritten database by loading it again through generated `MemoryDatabase`;
+- export translatable strings to CSV and write translations back into MasterMemory.
 
 ## Quick start
 
 ```powershell
-dotnet run --project .\src\Sirius.MasterTool\Sirius.MasterTool.csproj -- --sync --dir output
+dotnet run --project .\src\Sirius.MasterTool\Sirius.MasterTool.csproj -- sync --dir output
+
+dotnet run --project .\src\Sirius.MasterTool\Sirius.MasterTool.csproj -- db tables .\output\master\mastermemory.db
 ```
 
-Detailed documentation:
-
-- [Usage](usage.md)
-- [Authentication and State](authentication.md)
-- [MasterMemory JSON Export](masterdata-json.md)
-- [Output Layout](output-layout.md)
-- [Architecture](architecture.md)
-- [Troubleshooting](troubleshooting.md)
+See [Usage](usage.md) for all CLI commands.

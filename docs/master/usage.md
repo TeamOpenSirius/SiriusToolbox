@@ -2,130 +2,160 @@
 
 ## Requirements
 
-`Sirius.MasterTool` targets `net10.0` and requires the .NET 10 SDK.
+- .NET 10 SDK
+- `lib/Sirius.Protocol.dll` supplied with this repository
+
+Build:
 
 ```powershell
-dotnet --info
-```
-
-## Build
-
-```powershell
+dotnet restore .\SiriusTools.sln
 dotnet build .\SiriusTools.sln -c Release
 ```
 
-Run directly from the project:
+## Synchronize MasterData
 
 ```powershell
-dotnet run --project .\src\Sirius.MasterTool\Sirius.MasterTool.csproj -- --sync [options]
+Sirius.MasterTool.exe sync --dir output
 ```
 
-A Windows Release build is normally produced under:
+The legacy `Sirius.MasterTool.exe --sync ...` form is also accepted.
 
-```text
-src/Sirius.MasterTool/bin/Release/net10.0/
-```
-
-## Basic synchronization
-
-```powershell
-Sirius.MasterTool.exe --sync --dir output
-```
-
-`--sync` is required. Running without arguments prints help; supplying options without `--sync` produces an error.
-
-## Options
+Common sync options:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--sync` | — | Run the MasterData synchronization workflow. |
 | `--dir <path>` | `output` | Root output directory. |
-| `--api <url>` | `https://api.wds-stellarium.com` | Bootstrap API used for the Environment request. |
-| `--login-token <token>` | — | LoginToken to use instead of registering an account. |
-| `--access-token <token>` | — | Existing Bearer access token. |
-| `--register-name <name>` | `ArchiveUser` | Account name used for automatic registration. |
-| `--app-version <version>` | `2.30.1` | Application version used by Environment and authentication. |
-| `--auth-version-suffix <text>` | `.486` | Suffix appended to `--app-version` for the authentication client version. |
+| `--api <url>` | official API | Bootstrap API. |
+| `--login-token <token>` | — | Existing LoginToken. |
+| `--access-token <token>` | — | Existing Bearer token. |
+| `--register-name <name>` | `ArchiveUser` | Registration name. |
+| `--app-version <version>` | `2.30.1` | Public application version. |
+| `--auth-version-suffix <text>` | `.486` | Authentication version suffix. |
 | `--game-version <number>` | `2` | Game protocol version. |
-| `--platform <name>` | `google-play` | Value of the `X-Platform` header. |
-| `--fm <value>` | `0` | Value of the `X-FM` header. |
-| `--table-schema <path>` | build-provided schema | Override the MasterMemory `table.json` path. |
-| `--force` | false | Redownload and re-export even when the local version marker matches. |
-| `--no-json` | false | Skip MasterMemory JSON export. |
-| `--insecure` | false | Disable TLS certificate validation. Intended only for controlled debugging. |
-| `-h`, `--help` | — | Print command help. |
+| `--platform <name>` | `google-play` | `X-Platform`. |
+| `--fm <value>` | `0` | `X-FM`. |
+| `--force` | false | Redownload/re-export. |
+| `--no-json` | false | Skip per-table JSON export. |
+| `--insecure` | false | Disable TLS certificate validation for controlled debugging only. |
 
-The authentication application version is constructed as:
+## Inspect MasterMemory
 
-```text
-<app-version><auth-version-suffix>
-```
-
-With the defaults, the value is `2.30.1.486`.
-
-## Authentication environment variables
-
-| Variable | Purpose |
-| --- | --- |
-| `WDS_ACCOUNT_TOKEN` | Initial LoginToken value. |
-| `WDS_AUTH_TOKEN` | Initial access-token value. |
-
-A command-line token option overrides the corresponding environment-variable value. Saved state may be used when neither is provided.
-
-## Examples
-
-Download MasterMemory without exporting JSON:
+List tables:
 
 ```powershell
-Sirius.MasterTool.exe --sync --dir output --no-json
+Sirius.MasterTool.exe db tables mastermemory.db
+Sirius.MasterTool.exe db tables mastermemory.db --contains Music
 ```
 
-Force a complete refresh:
+Show the actual generated model fields and primary key:
 
 ```powershell
-Sirius.MasterTool.exe --sync --dir output --force
+Sirius.MasterTool.exe db schema mastermemory.db MusicMaster
 ```
 
-Use a LoginToken:
+List records (JSON output, 50 rows by default):
 
 ```powershell
-Sirius.MasterTool.exe --sync --login-token "<token>"
+Sirius.MasterTool.exe db list mastermemory.db MusicMaster --offset 0 --limit 20
 ```
 
-Use an access token directly:
+Read by primary key. Single-column keys accept the value directly:
 
 ```powershell
-Sirius.MasterTool.exe --sync --access-token "<token>"
+Sirius.MasterTool.exe db get mastermemory.db MusicMaster --key 1001
 ```
 
-Select client parameters explicitly:
+Composite keys use `Field=value;Field2=value`:
 
 ```powershell
-Sirius.MasterTool.exe --sync `
-  --app-version 2.30.1 `
-  --auth-version-suffix .486 `
-  --game-version 2 `
-  --platform google-play
+Sirius.MasterTool.exe db get mastermemory.db SomeTable --key "Id=1001;Type=2"
 ```
 
-Use a custom schema:
+## Add a record
+
+From JSON file:
 
 ```powershell
-Sirius.MasterTool.exe --sync --table-schema D:\wds\table.json
+Sirius.MasterTool.exe db add mastermemory.db MusicMaster `
+  --json .\music-new.json `
+  -o mastermemory.modified.db
 ```
 
-## Incremental behavior
+Or construct/override top-level fields on the CLI:
 
-The database download is skipped when all of the following are true:
+```powershell
+Sirius.MasterTool.exe db add mastermemory.db ExampleMaster `
+  --set Id=900001 `
+  --set Name="My Record" `
+  -o mastermemory.modified.db
+```
 
-- `--force` is not set;
-- the local MasterData version matches the remote manifest version;
-- `master/mastermemory.db` exists.
+`--set` values are parsed as JSON when possible. Numbers, booleans, arrays, objects, and quoted strings can therefore preserve their intended types.
 
-JSON export has its own completion marker. When the marker matches the current export format and MasterData version, parsing is skipped unless `--force` is set.
+## Update a record
 
-## Exit codes
+Patch fields from JSON:
 
-- `0`: completed successfully or help was displayed;
-- `1`: unhandled error;
-- `130`: cancelled with `Ctrl+C`.
+```powershell
+Sirius.MasterTool.exe db update mastermemory.db MusicMaster `
+  --key 1001 `
+  --data '{"Name":"Updated name"}' `
+  -o mastermemory.modified.db
+```
+
+Or use repeated setters:
+
+```powershell
+Sirius.MasterTool.exe db update mastermemory.db MusicMaster `
+  --key 1001 `
+  --set Name="Updated name" `
+  --set SortOrder=100 `
+  -o mastermemory.modified.db
+```
+
+## Delete a record
+
+```powershell
+Sirius.MasterTool.exe db delete mastermemory.db MusicMaster --key 1001 -o mastermemory.modified.db
+```
+
+## In-place editing
+
+For add/update/delete, replace `-o ...` with `--in-place`:
+
+```powershell
+Sirius.MasterTool.exe db update mastermemory.db MusicMaster --key 1001 --set Name="Updated" --in-place
+```
+
+The command creates `mastermemory.db.bak` before replacing the input. The modified database is fully reloaded through `Sirius.Protocol.Shared.MemoryDatabase` before it is accepted.
+
+## Export JSON
+
+```powershell
+Sirius.MasterTool.exe db export-json mastermemory.db .\master-json
+```
+
+The exporter uses the generated `Sirius.Protocol` table models directly. No external table schema is required.
+
+## Localization workflow
+
+Export string cells:
+
+```powershell
+Sirius.MasterTool.exe db export-text mastermemory.db translation.csv --japanese-only
+```
+
+Write the `translation` column back:
+
+```powershell
+Sirius.MasterTool.exe db build-text mastermemory.db translation.csv mastermemory.zh.db
+```
+
+The localization writer validates primary keys and source strings against the input database so stale CSV files cannot silently patch the wrong record.
+
+## Validation
+
+```powershell
+Sirius.MasterTool.exe db verify mastermemory.db
+Sirius.MasterTool.exe db roundtrip mastermemory.db mastermemory.copy.db
+```

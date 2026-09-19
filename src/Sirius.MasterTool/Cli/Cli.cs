@@ -30,7 +30,6 @@ internal static class Cli
                 case "--game-version": options.GameVersion = int.Parse(Next()); break;
                 case "--platform": options.Platform = Next(); break;
                 case "--fm": options.Fm = Next(); break;
-                case "--table-schema": options.TableSchemaPath = Next(); break;
                 case "--insecure": options.InsecureTls = true; break;
                 case "--force": options.Force = true; break;
                 case "--no-json": options.ExportJson = false; break;
@@ -54,9 +53,13 @@ internal static class Cli
     private static void PrintHelp() => Console.WriteLine("""
 Sirius Master Tool
 
-Downloads and updates official MasterData. Asset conversion is provided by Sirius.AssetTool in the same solution.
+Downloads/updates official MasterData and provides typed MasterMemory database editing through Sirius.Protocol.
 
 Usage:
+  Sirius.MasterTool.exe sync [options]
+  Sirius.MasterTool.exe db --help
+
+Legacy form also supported:
   Sirius.MasterTool.exe --sync [options]
 
 Options:
@@ -70,7 +73,6 @@ Options:
   --game-version <number>      Game protocol version (default: 2)
   --platform <name>            X-Platform header (default: google-play)
   --fm <value>                 X-FM header (default: 0)
-  --table-schema <path>        Optional dump.cs-derived table.json
   --force                      Download even when the version is unchanged
   --no-json                    Do not export MasterData tables to JSON
   --insecure                   Disable TLS certificate validation
