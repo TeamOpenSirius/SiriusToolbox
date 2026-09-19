@@ -15,6 +15,3 @@ TestResults/
 *.tmp
 state.json
 publication.json
-
-# Generated/private protocol assembly used by the MasterData model.
-lib/*.dll
