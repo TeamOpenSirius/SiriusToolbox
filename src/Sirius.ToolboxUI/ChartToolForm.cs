@@ -1,7 +1,7 @@
 using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
-using Sirius.AssetTool.Charts;
+using Sirius.Toolbox.Charts;
 
 namespace Sirius.ToolboxUI;
 

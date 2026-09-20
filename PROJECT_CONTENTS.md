@@ -1,17 +1,44 @@
-# SiriusToolbox full project contents
+# Sirius Toolbox project contents
 
-This archive contains the complete Toolbox project, including the original chart and episode tooling plus MasterMemory CLI and WinForms editing.
+`Sirius.Toolbox` holds every reusable implementation; `Sirius.ToolboxUI` is the only
+executable entry point. There is no AssetTool or MasterTool command-line executable.
 
-- `src/Sirius.AssetTool/Charts`: SUS parsing/conversion and Sirius chart ENC encode/decode.
-- `src/Sirius.AssetTool/R2`: reusable Cloudflare R2 MasterData object mapping, SHA-256 comparison, SigV4 signing, retry, and upload service.
-- `src/Sirius.AssetTool/Episodes`: episode pack/unpack commands, cache generation, editor persistence, and binary diagnostics.
-- `src/Sirius.Tooling.Core/Episodes`: shared episode models/codecs.
-- `src/Sirius.MasterData`: shared typed MasterMemory table/record CRUD and rebuild implementation.
-- `src/Sirius.MasterTool`: MasterData synchronization plus typed MasterMemory CLI.
-- `src/Sirius.ToolboxUI`: WinForms start center with MasterData, Chart, Episode, cache, Episode editor, and combined 主数据 / CDN / R2 全量同步 tools.
-- `scripts/build-release.ps1`: produces the self-contained compressed single-file ToolboxUI distribution binary.
-- `scripts/clean.ps1`: removes generated build/publish directories and the migrated empty GUI directory.
-- `lib/Sirius.Protocol.dll`: generated protocol/MasterMemory models used by `Sirius.MasterData`.
+- `src/Sirius.Toolbox/Charts`: SUS parsing/conversion and Sirius chart ENC encode/decode.
+- `src/Sirius.Toolbox/Episodes`: episode pack/unpack, Version 2 scene index, editor
+  persistence, and binary diagnostics.
+- `src/Sirius.Toolbox/Assets`: Unity Addressables catalog parsing, static-asset and
+  notation discovery, episode scene discovery, and the incremental CDN mirror.
+- `src/Sirius.Toolbox/R2`: Cloudflare R2 object mapping, SHA-256 comparison, SigV4
+  signing, retry, hash cache, and the MasterData/CDN publication service.
+- `src/Sirius.Toolbox/Master`: official registration/authentication, `mastermemory.db`
+  download, verification, publication manifests, and the full sync service.
+- `src/Sirius.Toolbox/IO`: atomic file helpers shared by the asset and master services.
+- `src/Sirius.ToolboxUI`: WinForms start center plus the MasterData editor, official
+  MasterData/CDN sync, Chart, Episode, scene cache, Episode editor, and
+  MasterData/CDN/R2 publication windows.
+- `tests/Sirius.Toolbox.Tests`: non-network service harness covering Chart, Episode,
+  Addressables catalog parsing, CDN mirror resume/diffing, and R2 planning.
+- `scripts/build-release.ps1`: produces the self-contained compressed single-file
+  ToolboxUI distribution binary.
+- `scripts/smoke-test.ps1`: restores, builds, runs the service harness and the
+  `--self-test-ui` harness, and checks the Release executable.
+- `lib/Sirius.Protocol.dll`: fallback protocol/MasterMemory models used when the sibling
+  `SiriusData` repository is not present.
 
-MasterMemory CLI supports table/schema/list/get/add/update/delete/verify/export-json plus localization text workflows.
-ToolboxUI supports separate MasterData, Chart, Episode, scene-cache, Episode editor, and one combined 主数据 / CDN / R2 全量同步 window. MasterData supports table filtering, paged record browsing, primary-key lookup, schema inspection, JSON record editing, add/duplicate/delete, verification, and save/save-as. Episode supports single-file packing/unpacking plus directory batch packing and BIN-to-JSON batch unpacking. The cache window builds and browses Version 2 `scene-assets.json`; the editor preserves wrapper metadata and exports edited BIN files. The combined synchronizer previews or publishes MasterData, catalogs, and CDN files, with mapping output, hash-cache reuse, remote SHA-256 skipping, concurrency, retries, and force mode.
+Shared MasterMemory models and the typed edit/export/rebuild layer live in the sibling
+`E:\Ymst\Projects\SiriusData` repository (`Sirius.Protocol` and `Sirius.MasterData`).
+This repository does not copy those models.
+
+## Capability summary
+
+ToolboxUI exposes separate MasterData, Chart, Episode, scene-cache, Episode editor,
+official MasterData/CDN sync, and MasterData/CDN/R2 publication windows. MasterData
+supports table filtering, paged browsing, primary-key lookup, schema inspection, JSON
+editing, add/duplicate/delete, verification, and save/save-as. Episode supports
+single-file packing/unpacking plus directory batch packing and batch unpacking. The
+cache window builds and browses Version 2 `scene-assets.json`; the editor preserves
+wrapper metadata and exports edited BIN files. The official sync window downloads and
+verifies `mastermemory.db` and mirrors catalogs, static assets, notations, and episode
+scenes incrementally. The publication window previews or uploads MasterData, catalogs,
+and CDN files with mapping output, hash-cache reuse, remote SHA-256 skipping,
+concurrency, retries, and force mode.

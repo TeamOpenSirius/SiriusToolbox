@@ -1,4 +1,4 @@
-namespace Sirius.AssetTool.Episodes;
+namespace Sirius.Toolbox.Episodes;
 
 internal static class BinaryDiagnostics
 {

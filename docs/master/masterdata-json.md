@@ -1,13 +1,9 @@
-# MasterMemory JSON Export
+# MasterData JSON
 
-MasterMemory JSON export is generated from `Sirius.Protocol.Shared.MemoryDatabase` and its generated table metadata.
+Enable “导出类型化 JSON” in the official-sync window. Each generated MasterMemory
+table is written below `master/json` using `Sirius.Protocol` property names and types.
 
-There is no separate `table.json` schema in the Toolbox. Table names, row types, property names, MessagePack fields, and MasterMemory primary indexes come from the same `Sirius.Protocol.dll` used to load and rebuild the database.
+# 主数据 JSON
 
-During `sync`, JSON is written under `output/master/json/`. It can also be generated explicitly:
-
-```powershell
-Sirius.MasterTool.exe db export-json mastermemory.db master-json
-```
-
-Each MasterMemory table becomes one `<TableName>.json` file containing an array of typed records. Enum values are emitted by name; byte arrays are Base64 strings.
+在官方下载窗口启用“导出类型化 JSON”。每个生成表按 `Sirius.Protocol` 属性名和类型
+写入 `master/json`。

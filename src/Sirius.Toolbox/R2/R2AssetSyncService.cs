@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace Sirius.AssetTool.R2;
+namespace Sirius.Toolbox.R2;
 
 public sealed record R2SyncOptions(string RootDirectory)
 {
@@ -16,7 +16,39 @@ public sealed record R2SyncOptions(string RootDirectory)
     public int Concurrency { get; init; } = 16;
     public int MaxRetries { get; init; } = MasterDataR2UploadDefaults.MaxRetries;
     public bool Force { get; init; }
+    public bool OnlyUploadChanged { get; init; }
     public bool DryRun { get; init; }
+    public IReadOnlyList<R2CustomMapping> CustomMappings { get; init; } = Array.Empty<R2CustomMapping>();
+}
+
+public sealed record R2CustomMapping(string LocalDirectory, string ObjectPrefix)
+{
+    public static R2CustomMapping Parse(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException("自定义目录映射不能为空。", nameof(value));
+
+        var separator = value.IndexOf('=');
+        if (separator <= 0 || separator == value.Length - 1)
+            throw new ArgumentException("自定义目录映射格式应为“本地目录=R2对象前缀”。", nameof(value));
+
+        var localDirectory = value[..separator].Trim();
+        var objectPrefix = value[(separator + 1)..].Trim();
+        if (localDirectory.Length == 0 || objectPrefix.Length == 0)
+            throw new ArgumentException("自定义目录映射的本地目录和 R2 对象前缀不能为空。", nameof(value));
+        return new R2CustomMapping(localDirectory, objectPrefix);
+    }
+
+    public static IReadOnlyList<R2CustomMapping> ParseLines(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return Array.Empty<R2CustomMapping>();
+
+        return value
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(Parse)
+            .ToArray();
+    }
 }
 
 public sealed record R2SyncObjectPlan(
@@ -74,11 +106,12 @@ public sealed partial class R2AssetSyncService
     {
         ArgumentNullException.ThrowIfNull(options);
         ValidateOptions(options);
-        var entries = DiscoverEntries(options);
+        var root = ResolveRootDirectory(options.RootDirectory);
+        var entries = DiscoverEntries(root, options);
         if (entries.Count == 0)
         {
             throw new InvalidOperationException(
-                $"在“{Path.Combine(Path.GetFullPath(options.RootDirectory), "assets")}”下没有找到可同步的主数据、目录清单或资源文件。");
+                $"在“{Path.Combine(root, "assets")}”下没有找到可同步的主数据、目录清单或资源文件。");
         }
 
         return new R2SyncPlan(
@@ -98,8 +131,8 @@ public sealed partial class R2AssetSyncService
     {
         ArgumentNullException.ThrowIfNull(options);
         ValidateOptions(options);
-        var root = Path.GetFullPath(options.RootDirectory);
-        var entries = DiscoverEntries(options);
+        var root = ResolveRootDirectory(options.RootDirectory);
+        var entries = DiscoverEntries(root, options);
         if (entries.Count == 0)
         {
             throw new InvalidOperationException(
@@ -178,7 +211,8 @@ public sealed partial class R2AssetSyncService
                     try
                     {
                         string sha256;
-                        if (hashCache.TryGet(entry, out var cachedSha256))
+                        var hasCachedHash = hashCache.TryGet(entry, out var cachedSha256, out _);
+                        if (hasCachedHash)
                         {
                             sha256 = cachedSha256;
                             Interlocked.Increment(ref cachedHashes);
@@ -187,8 +221,26 @@ public sealed partial class R2AssetSyncService
                         else
                         {
                             sha256 = await HashFileAsync(entry.LocalPath, ct);
-                            hashCache.Set(entry, sha256);
                             Interlocked.Add(ref hashedBytes, entry.Length);
+                        }
+
+                        var hasRemoteBaseline = hashCache.HasRemoteVerifiedBaseline(entry);
+                        if (options.OnlyUploadChanged && !options.Force && hasCachedHash && hasRemoteBaseline)
+                        {
+                            Interlocked.Increment(ref skipped);
+                            return;
+                        }
+
+                        if (options.OnlyUploadChanged && !options.Force && !hasCachedHash && hasRemoteBaseline)
+                        {
+                            await ExecuteWithRetryAsync(
+                                innerCt => store.PutAsync(entry, sha256, innerCt),
+                                options.MaxRetries,
+                                ct);
+                            Interlocked.Increment(ref uploaded);
+                            Interlocked.Add(ref uploadedBytes, entry.Length);
+                            hashCache.Set(entry, sha256, remoteVerified: true);
+                            return;
                         }
 
                         var unchanged = !options.Force && await ExecuteWithRetryAsync(
@@ -203,6 +255,7 @@ public sealed partial class R2AssetSyncService
                         if (unchanged)
                         {
                             Interlocked.Increment(ref skipped);
+                            hashCache.Set(entry, sha256, remoteVerified: true);
                         }
                         else
                         {
@@ -212,6 +265,7 @@ public sealed partial class R2AssetSyncService
                                 ct);
                             Interlocked.Increment(ref uploaded);
                             Interlocked.Add(ref uploadedBytes, entry.Length);
+                            hashCache.Set(entry, sha256, remoteVerified: true);
                         }
                     }
                     catch (HttpRequestException exception) when (
@@ -297,7 +351,7 @@ public sealed partial class R2AssetSyncService
                 Interlocked.Read(ref hashedBytes),
                 Interlocked.Read(ref cachedHashBytes),
                 Interlocked.Read(ref uploadedBytes),
-                $"同步进度：{Volatile.Read(ref completed)}/{entries.Count}，上传 {Volatile.Read(ref uploaded)}，跳过 {Volatile.Read(ref skipped)}，失败 {failures.Count}"));
+                $"同步进度：{Volatile.Read(ref completed)}/{entries.Count}，上传 {Volatile.Read(ref uploaded)}，跳过 {Volatile.Read(ref skipped)}，本地缓存命中 {Volatile.Read(ref cachedHashes)}，失败 {failures.Count}，已处理 {Interlocked.Read(ref processedBytes):N0}/{totalBytes:N0} 字节"));
         }
     }
 
@@ -329,14 +383,23 @@ public sealed partial class R2AssetSyncService
         return path;
     }
 
-    private static List<R2UploadEntry> DiscoverEntries(R2SyncOptions options)
+    private static List<R2UploadEntry> DiscoverEntries(string root, R2SyncOptions options)
     {
-        var root = Path.GetFullPath(options.RootDirectory);
         var entries = new Dictionary<string, R2UploadEntry>(StringComparer.Ordinal);
         AddMasterDataEntry(root, options, entries);
         AddCatalogEntries(root, options, entries);
-        AddAssetFileEntries(root, options, entries);
+        var customMappings = NormalizeCustomMappings(root, options.CustomMappings);
+        AddAssetFileEntries(root, options, entries, customMappings);
         return entries.Values.OrderBy(item => item.ObjectKey, StringComparer.Ordinal).ToList();
+    }
+
+    private static string ResolveRootDirectory(string rootValue)
+    {
+        var root = Path.GetFullPath(rootValue);
+        var directory = new DirectoryInfo(root);
+        return string.Equals(directory.Name, "assets", StringComparison.OrdinalIgnoreCase) && directory.Parent is not null
+            ? directory.Parent.FullName
+            : root;
     }
 
     private static void AddMasterDataEntry(string root, R2SyncOptions options, IDictionary<string, R2UploadEntry> entries)
@@ -389,7 +452,11 @@ public sealed partial class R2AssetSyncService
         }
     }
 
-    private static void AddAssetFileEntries(string root, R2SyncOptions options, IDictionary<string, R2UploadEntry> entries)
+    private static void AddAssetFileEntries(
+        string root,
+        R2SyncOptions options,
+        IDictionary<string, R2UploadEntry> entries,
+        IReadOnlyList<NormalizedR2CustomMapping> customMappings)
     {
         var assetRoot = Path.Combine(root, "assets", "files");
         if (!Directory.Exists(assetRoot))
@@ -399,6 +466,16 @@ public sealed partial class R2AssetSyncService
             if (IsWorkFile(path))
                 continue;
             var relative = Path.GetRelativePath(assetRoot, path);
+            var relativeKey = relative.Replace('\\', '/');
+            if (TryFindCustomMapping(relativeKey, customMappings, out var customMapping, out var customSuffix))
+            {
+                var customKey = string.IsNullOrEmpty(customSuffix)
+                    ? customMapping.ObjectPrefix
+                    : CombineObjectKey(customMapping.ObjectPrefix, customSuffix);
+                AddEntry(root, options, entries, path, customKey, AssetContentType(path), null);
+                continue;
+            }
+
             var parts = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             var mappedPath = parts.Length >= 3 && LooksLikeOriginHost(parts[1])
                 ? CombineObjectKey(parts.Skip(2).ToArray())
@@ -414,6 +491,86 @@ public sealed partial class R2AssetSyncService
             AddEntry(root, options, entries, path, key, AssetContentType(path), null);
         }
     }
+
+    private static IReadOnlyList<NormalizedR2CustomMapping> NormalizeCustomMappings(
+        string root,
+        IReadOnlyList<R2CustomMapping>? mappings)
+    {
+        if (mappings is null || mappings.Count == 0)
+            return Array.Empty<NormalizedR2CustomMapping>();
+
+        var assetRoot = Path.Combine(root, "assets", "files");
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var normalized = new List<NormalizedR2CustomMapping>(mappings.Count);
+        foreach (var mapping in mappings)
+        {
+            var localDirectory = NormalizeRelativePath(mapping.LocalDirectory, "自定义映射本地目录");
+            var objectPrefix = NormalizeRelativePath(mapping.ObjectPrefix, "自定义映射 R2 对象前缀");
+            if (!seen.Add(localDirectory))
+                throw new InvalidDataException($"自定义映射本地目录重复：{localDirectory}");
+
+            var fullDirectory = Path.GetFullPath(Path.Combine(
+                assetRoot,
+                localDirectory.Replace('/', Path.DirectorySeparatorChar)));
+            EnsureBelowRoot(assetRoot, fullDirectory);
+            if (!Directory.Exists(fullDirectory))
+                throw new DirectoryNotFoundException($"自定义映射目录不存在：{fullDirectory}");
+
+            normalized.Add(new NormalizedR2CustomMapping(localDirectory, objectPrefix));
+        }
+
+        return normalized
+            .OrderByDescending(item => item.LocalDirectory.Length)
+            .ToArray();
+    }
+
+    private static bool TryFindCustomMapping(
+        string relativePath,
+        IReadOnlyList<NormalizedR2CustomMapping> mappings,
+        out NormalizedR2CustomMapping mapping,
+        out string suffix)
+    {
+        foreach (var candidate in mappings)
+        {
+            if (relativePath.Equals(candidate.LocalDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                mapping = candidate;
+                suffix = string.Empty;
+                return true;
+            }
+
+            var prefix = candidate.LocalDirectory + "/";
+            if (relativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                mapping = candidate;
+                suffix = relativePath[prefix.Length..];
+                return true;
+            }
+        }
+
+        mapping = null!;
+        suffix = string.Empty;
+        return false;
+    }
+
+    private static string NormalizeRelativePath(string value, string description)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new InvalidDataException($"{description}不能为空。");
+
+        var normalized = value.Trim().Replace('\\', '/');
+        if (Path.IsPathRooted(value) || normalized.StartsWith("/", StringComparison.Ordinal) ||
+            Uri.TryCreate(normalized, UriKind.Absolute, out _) ||
+            normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).Any(item => item is "." or ".."))
+            throw new InvalidDataException($"{description}必须是安全的相对路径：{value}");
+
+        var parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+            throw new InvalidDataException($"{description}不能为空。");
+        return string.Join('/', parts);
+    }
+
+    private sealed record NormalizedR2CustomMapping(string LocalDirectory, string ObjectPrefix);
 
     private static bool LooksLikeOriginHost(string value) =>
         value.Contains('.', StringComparison.Ordinal) ||

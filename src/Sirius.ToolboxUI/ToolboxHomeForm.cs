@@ -71,6 +71,14 @@ public sealed class ToolboxHomeForm : Form
         editorButton.Click += (_, _) => OpenEpisodeEditor();
         var syncButton = CreateToolButton("主数据 / CDN 全量同步", "同步 MasterData、目录清单和 CDN 资源");
         syncButton.Click += (_, _) => OpenR2Sync();
+        var downloadButton = CreateToolButton(
+            "官方 MasterData / CDN 同步",
+            "注册认证、下载校验主数据、增量镜像 CDN 资源");
+        downloadButton.Click += (_, _) => OpenMasterDataSync();
+        var repackButton = CreateToolButton(
+            "主数据离线重打包",
+            "导出 JSON、编辑后重建 mastermemory.db，未改动表保持字节一致");
+        repackButton.Click += (_, _) => OpenRepack();
 
         var buttons = new TableLayoutPanel
         {
@@ -78,20 +86,23 @@ public sealed class ToolboxHomeForm : Form
             ColumnCount = 3,
             Dock = DockStyle.Fill,
             Padding = new Padding(24),
-            RowCount = 2
+            RowCount = 3
         };
         buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33F));
         buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33F));
         buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.34F));
         buttons.RowStyles.Clear();
-        buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33F));
+        buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33F));
+        buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 33.34F));
         buttons.Controls.Add(masterButton, 0, 0);
         buttons.Controls.Add(chartButton, 1, 0);
         buttons.Controls.Add(episodeButton, 2, 0);
         buttons.Controls.Add(cacheButton, 0, 1);
         buttons.Controls.Add(editorButton, 1, 1);
         buttons.Controls.Add(syncButton, 2, 1);
+        buttons.Controls.Add(downloadButton, 0, 2);
+        buttons.Controls.Add(repackButton, 1, 2);
 
         var layout = new TableLayoutPanel
         {
@@ -138,6 +149,12 @@ public sealed class ToolboxHomeForm : Form
 
     private R2SyncForm OpenR2Sync()
         => OpenChild("r2-sync", static () => new R2SyncForm());
+
+    private MasterDataSyncForm OpenMasterDataSync()
+        => OpenChild("master-sync", static () => new MasterDataSyncForm());
+
+    private MasterMemoryRepackForm OpenRepack()
+        => OpenChild("master-repack", static () => new MasterMemoryRepackForm());
 
     private T OpenChild<T>(string key, Func<T> factory) where T : Form
     {

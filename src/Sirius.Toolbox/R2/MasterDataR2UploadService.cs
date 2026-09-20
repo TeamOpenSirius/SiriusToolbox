@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace Sirius.AssetTool.R2;
+namespace Sirius.Toolbox.R2;
 
 public static class MasterDataR2UploadDefaults
 {

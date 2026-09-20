@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Sirius.MasterTool\Sirius.MasterTool.csproj" />
     <ProjectReference Include="..\Sirius.Toolbox\Sirius.Toolbox.csproj" />
+    <ProjectReference Include="..\..\..\SiriusData\src\Sirius.MasterData\Sirius.MasterData.csproj" />
   </ItemGroup>
 </Project>

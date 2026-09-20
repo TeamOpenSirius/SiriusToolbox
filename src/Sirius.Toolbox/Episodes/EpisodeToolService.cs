@@ -2,7 +2,7 @@ using Sirius.Toolbox.Episodes;
 using Sirius.Toolbox.Episodes.Protocol;
 using Sirius.Toolbox.IO;
 
-namespace Sirius.AssetTool.Episodes;
+namespace Sirius.Toolbox.Episodes;
 
 public sealed record EpisodePackResult(
     string OutputPath,
@@ -15,7 +15,10 @@ public sealed record EpisodeBatchItemResult(
     string? OutputPath,
     bool Succeeded,
     long ByteCount,
-    string? Error);
+    string? Error)
+{
+    public bool Skipped { get; init; }
+}
 
 public sealed record EpisodeBatchResult(
     IReadOnlyList<EpisodeBatchItemResult> Items,
@@ -41,9 +44,8 @@ public sealed class EpisodeToolService
             throw new FileNotFoundException("找不到输入 JSON。", fullInputPath);
 
         var fullOutputPath = Path.GetFullPath(outputPath ?? Path.ChangeExtension(fullInputPath, ".bin"));
-        EnsureCanWrite(fullOutputPath, overwrite);
-
         var episode = EpisodeCodec.ReadJson(fullInputPath);
+        EnsureCanWrite(fullOutputPath, overwrite);
         var bytes = EpisodeCodec.Pack(episode.Details);
         EpisodeCodec.Verify(bytes, episode.Details);
         AtomicFile.WriteAllBytes(fullOutputPath, bytes);
@@ -72,12 +74,19 @@ public sealed class EpisodeToolService
             var outputPath = Path.Combine(fullOutputDirectory, Path.ChangeExtension(relative, ".bin"));
             try
             {
-                EnsureCanWrite(outputPath, overwrite);
                 var episode = EpisodeCodec.ReadJson(inputPath);
+                EnsureCanWrite(outputPath, overwrite);
                 var bytes = EpisodeCodec.Pack(episode.Details);
                 EpisodeCodec.Verify(bytes, episode.Details);
                 AtomicFile.WriteAllBytes(outputPath, bytes);
                 items.Add(new EpisodeBatchItemResult(inputPath, outputPath, true, bytes.Length, null));
+            }
+            catch (UnsupportedEpisodeFormatException exception)
+            {
+                items.Add(new EpisodeBatchItemResult(inputPath, outputPath, false, 0, exception.Message)
+                {
+                    Skipped = true
+                });
             }
             catch (Exception exception)
             {

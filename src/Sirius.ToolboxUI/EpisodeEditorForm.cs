@@ -1,6 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
-using Sirius.AssetTool.Episodes;
+using Sirius.Toolbox.Episodes;
 using Sirius.Toolbox.Episodes.Protocol;
 
 namespace Sirius.ToolboxUI;

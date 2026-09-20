@@ -5,7 +5,7 @@ namespace Sirius.Toolbox.Episodes.Protocol
 {
     /// <summary>
     /// MessagePack settings used by Sirius episode resources.
-    /// Centralized in Sirius.Toolbox so protocol contracts stay independent from the CLI projects.
+    /// Centralized in Sirius.Toolbox so protocol contracts stay independent from the UI project.
     /// </summary>
     internal static class EpisodeMessagePack
     {

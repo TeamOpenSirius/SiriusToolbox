@@ -1,6 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
-using Sirius.AssetTool.R2;
+using Sirius.Toolbox.R2;
 
 namespace Sirius.ToolboxUI;
 
@@ -10,6 +10,14 @@ public sealed class R2SyncForm : Form
     private readonly TextBox _endpointBox = new() { Dock = DockStyle.Fill };
     private readonly TextBox _bucketBox = new() { Dock = DockStyle.Fill };
     private readonly TextBox _prefixBox = new() { Dock = DockStyle.Fill, PlaceholderText = "可留空" };
+    private readonly TextBox _customMappingsBox = new()
+    {
+        AcceptsReturn = true,
+        Dock = DockStyle.Fill,
+        Multiline = true,
+        PlaceholderText = "每行一条，例如：scenes-zh-cn=master-data/production/scenes-zh-cn",
+        ScrollBars = ScrollBars.Vertical
+    };
     private readonly TextBox _accessKeyBox = new() { Dock = DockStyle.Fill };
     private readonly TextBox _secretKeyBox = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
     private readonly TextBox _sessionTokenBox = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
@@ -29,10 +37,12 @@ public sealed class R2SyncForm : Form
         Width = 90
     };
     private readonly CheckBox _forceBox = new() { AutoSize = true, Text = "强制上传（不检查远端版本）" };
+    private readonly CheckBox _onlyChangedBox = new() { AutoSize = true, Text = "仅上传本地变更（首次仍核对全部）" };
     private readonly CheckBox _dryRunBox = new() { AutoSize = true, Checked = true, Text = "仅预览，不访问 R2" };
     private readonly Button _scanButton = new() { AutoSize = true, Text = "扫描映射" };
     private readonly Button _syncButton = new() { AutoSize = true, Text = "开始同步" };
     private readonly Button _cancelButton = new() { AutoSize = true, Enabled = false, Text = "取消" };
+    private readonly Button _clearSavedCredentialsButton = new() { AutoSize = true, Text = "清除已保存凭据" };
     private readonly Label _statusLabel = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Text = "尚未扫描" };
     private readonly DataGridView _grid = new()
     {
@@ -65,17 +75,30 @@ public sealed class R2SyncForm : Form
         MinimumSize = new Size(1100, 760);
         Size = new Size(1420, 920);
 
-        _endpointBox.Text = MasterDataR2UploadDefaults.Endpoint;
-        _bucketBox.Text = MasterDataR2UploadDefaults.Bucket;
-        _accessKeyBox.Text = Environment.GetEnvironmentVariable("R2_ACCESS_KEY_ID") ?? string.Empty;
-        _secretKeyBox.Text = Environment.GetEnvironmentVariable("R2_SECRET_ACCESS_KEY") ?? string.Empty;
-        _sessionTokenBox.Text = Environment.GetEnvironmentVariable("R2_SESSION_TOKEN") ?? string.Empty;
+        var saved = R2SettingsStore.Load();
+        _rootDirectoryBox.Text = saved.RootDirectory;
+        _endpointBox.Text = string.IsNullOrWhiteSpace(saved.Endpoint)
+            ? MasterDataR2UploadDefaults.Endpoint
+            : saved.Endpoint;
+        _bucketBox.Text = string.IsNullOrWhiteSpace(saved.Bucket)
+            ? MasterDataR2UploadDefaults.Bucket
+            : saved.Bucket;
+        _prefixBox.Text = saved.KeyPrefix;
+        _customMappingsBox.Text = saved.CustomMappings;
+        _onlyChangedBox.Checked = saved.OnlyUploadChanged;
+        _accessKeyBox.Text = saved.AccessKeyId ?? Environment.GetEnvironmentVariable("R2_ACCESS_KEY_ID") ?? string.Empty;
+        _secretKeyBox.Text = saved.SecretAccessKey ?? Environment.GetEnvironmentVariable("R2_SECRET_ACCESS_KEY") ?? string.Empty;
+        _sessionTokenBox.Text = saved.SessionToken ?? Environment.GetEnvironmentVariable("R2_SESSION_TOKEN") ?? string.Empty;
 
         BuildUi();
         _rootBrowseButton.Click += (_, _) => BrowseRootDirectory();
         _scanButton.Click += async (_, _) => await ScanAsync();
         _syncButton.Click += async (_, _) => await SyncAsync();
         _cancelButton.Click += (_, _) => _cancellation?.Cancel();
+        _clearSavedCredentialsButton.Click += (_, _) => ClearSavedCredentials();
+        _forceBox.CheckedChanged += (_, _) => UpdateOnlyChangedState();
+        FormClosed += (_, _) => SaveSettings();
+        UpdateOnlyChangedState();
     }
 
     private void BuildUi()
@@ -91,27 +114,34 @@ public sealed class R2SyncForm : Form
             ColumnCount = 3,
             Dock = DockStyle.Fill,
             Padding = new Padding(12),
-            RowCount = 11
+            RowCount = 12
         };
         settings.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145));
         settings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         settings.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        for (var row = 0; row < 10; row++)
+        for (var row = 0; row < 7; row++)
+            settings.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        settings.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+        for (var row = 8; row < 11; row++)
             settings.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         settings.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        AddPathRow(settings, 0, "同步输出目录：", _rootDirectoryBox, _rootBrowseButton);
+        AddPathRow(settings, 0, "同步根目录：", _rootDirectoryBox, _rootBrowseButton);
         AddValueRow(settings, 1, "R2 S3 地址：", _endpointBox);
         AddValueRow(settings, 2, "存储桶：", _bucketBox);
         AddValueRow(settings, 3, "对象键前缀：", _prefixBox);
         AddValueRow(settings, 4, "访问密钥 ID：", _accessKeyBox);
         AddValueRow(settings, 5, "秘密访问密钥：", _secretKeyBox);
-        AddValueRow(settings, 6, "临时凭据令牌：", _sessionTokenBox);
+        AddValueRow(settings, 6, "S3 临时会话令牌（cfat_ API Token 不填）：", _sessionTokenBox);
 
-        settings.Controls.Add(new Label { AutoSize = true, Anchor = AnchorStyles.Left, Text = "并发上传数：" }, 0, 7);
-        settings.Controls.Add(_concurrencyBox, 1, 7);
-        settings.Controls.Add(new Label { AutoSize = true, Anchor = AnchorStyles.Left, Text = "失败重试次数：" }, 0, 8);
-        settings.Controls.Add(_retriesBox, 1, 8);
+        settings.Controls.Add(new Label { AutoSize = true, Anchor = AnchorStyles.Left, Text = "自定义目录映射：" }, 0, 7);
+        settings.Controls.Add(_customMappingsBox, 1, 7);
+        settings.SetColumnSpan(_customMappingsBox, 2);
+
+        settings.Controls.Add(new Label { AutoSize = true, Anchor = AnchorStyles.Left, Text = "并发上传数：" }, 0, 8);
+        settings.Controls.Add(_concurrencyBox, 1, 8);
+        settings.Controls.Add(new Label { AutoSize = true, Anchor = AnchorStyles.Left, Text = "失败重试次数：" }, 0, 9);
+        settings.Controls.Add(_retriesBox, 1, 9);
 
         var options = new FlowLayoutPanel
         {
@@ -122,10 +152,12 @@ public sealed class R2SyncForm : Form
         };
         options.Controls.Add(_dryRunBox);
         options.Controls.Add(_forceBox);
+        options.Controls.Add(_onlyChangedBox);
         options.Controls.Add(_scanButton);
         options.Controls.Add(_syncButton);
         options.Controls.Add(_cancelButton);
-        settings.Controls.Add(options, 0, 9);
+        options.Controls.Add(_clearSavedCredentialsButton);
+        settings.Controls.Add(options, 0, 10);
         settings.SetColumnSpan(options, 3);
 
         var help = new Label
@@ -133,12 +165,12 @@ public sealed class R2SyncForm : Form
             AutoSize = true,
             Dock = DockStyle.Fill,
             ForeColor = SystemColors.GrayText,
-            Text = "同步 master、assets\\catalogs、assets\\files；哈希缓存：assets\\r2-hash-cache.json；预览映射：assets\\r2-object-map.tsv。",
+            Text = "可选择项目根目录或直接选择 assets 目录；同步 master、assets\\catalogs、assets\\files，并维护 assets\\r2-hash-cache.json 和 assets\\r2-object-map.tsv。",
             TextAlign = ContentAlignment.MiddleLeft
         };
-        settings.Controls.Add(help, 0, 10);
+        settings.Controls.Add(help, 0, 11);
         settings.SetColumnSpan(help, 2);
-        settings.Controls.Add(_statusLabel, 2, 10);
+        settings.Controls.Add(_statusLabel, 2, 11);
 
         var gridGroup = new GroupBox
         {
@@ -162,7 +194,7 @@ public sealed class R2SyncForm : Form
             Dock = DockStyle.Fill,
             RowCount = 3
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 360));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 420));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 48));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 52));
         layout.Controls.Add(settings, 0, 0);
@@ -211,6 +243,7 @@ public sealed class R2SyncForm : Form
         {
             SetBusy(true);
             var options = ReadOptions(dryRun: true);
+            SaveSettings();
             var plan = await Task.Run(() => new R2AssetSyncService().BuildPlan(options));
             BindPlan(plan);
             _statusLabel.Text = $"{plan.Objects.Count} 个对象，{plan.TotalBytes:N0} 字节";
@@ -236,16 +269,29 @@ public sealed class R2SyncForm : Form
             using var cancellation = new CancellationTokenSource();
             _cancellation = cancellation;
             var options = ReadOptions(_dryRunBox.Checked);
-            AppendLog(options.DryRun ? "开始预览主数据 / CDN / R2 全量映射..." : "开始主数据 / CDN / R2 全量同步...");
-            var lastMessage = string.Empty;
+            SaveSettings();
+            AppendLog(options.DryRun
+                ? "开始预览主数据 / CDN / R2 全量映射..."
+                : options.OnlyUploadChanged
+                    ? "开始主数据 / CDN / R2 同步（仅上传本地变更，首次未建立基线的对象会先核对）..."
+                    : "开始主数据 / CDN / R2 全量增量校验同步...");
+            var lastLoggedAt = DateTimeOffset.MinValue;
+            var lastLoggedCompleted = -1;
+            var logEvery = Math.Max(1, (int)_concurrencyBox.Value);
             var progress = new Progress<R2SyncProgress>(item =>
             {
                 _statusLabel.Text = item.Message;
-                if (!string.Equals(lastMessage, item.Message, StringComparison.Ordinal))
+                var now = DateTimeOffset.UtcNow;
+                var shouldLog = item.Message.StartsWith("警告", StringComparison.Ordinal) ||
+                                item.Completed == item.Total ||
+                                (item.Completed == 0 && lastLoggedCompleted < 0) ||
+                                (item.Completed != lastLoggedCompleted && item.Completed % logEvery == 0) ||
+                                now - lastLoggedAt >= TimeSpan.FromSeconds(2);
+                if (shouldLog)
                 {
-                    lastMessage = item.Message;
-                    if (item.Completed == item.Total || item.Message.StartsWith("警告", StringComparison.Ordinal))
-                        AppendLog(item.Message);
+                    lastLoggedAt = now;
+                    lastLoggedCompleted = item.Completed;
+                    AppendLog(item.Message);
                 }
             });
             var result = await Task.Run(
@@ -297,7 +343,9 @@ public sealed class R2SyncForm : Form
             Concurrency = (int)_concurrencyBox.Value,
             MaxRetries = (int)_retriesBox.Value,
             Force = _forceBox.Checked,
-            DryRun = dryRun
+            OnlyUploadChanged = _onlyChangedBox.Checked,
+            DryRun = dryRun,
+            CustomMappings = R2CustomMapping.ParseLines(_customMappingsBox.Text)
         };
     }
 
@@ -326,14 +374,56 @@ public sealed class R2SyncForm : Form
         _accessKeyBox.Enabled = !busy;
         _secretKeyBox.Enabled = !busy;
         _sessionTokenBox.Enabled = !busy;
+        _customMappingsBox.Enabled = !busy;
         _concurrencyBox.Enabled = !busy;
         _retriesBox.Enabled = !busy;
         _forceBox.Enabled = !busy;
+        _onlyChangedBox.Enabled = !busy && !_forceBox.Checked;
         _dryRunBox.Enabled = !busy;
         _scanButton.Enabled = !busy;
         _syncButton.Enabled = !busy;
         _cancelButton.Enabled = busy;
+        _clearSavedCredentialsButton.Enabled = !busy;
         Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+    }
+
+    private void UpdateOnlyChangedState()
+    {
+        _onlyChangedBox.Enabled = !_busy && !_forceBox.Checked;
+    }
+
+    private void ClearSavedCredentials()
+    {
+        _accessKeyBox.Clear();
+        _secretKeyBox.Clear();
+        _sessionTokenBox.Clear();
+        SaveSettings();
+        AppendLog("已清除本地保存的 R2 凭据。");
+    }
+
+    private void SaveSettings()
+    {
+        var sessionToken = NullIfEmpty(_sessionTokenBox.Text);
+        if (sessionToken?.StartsWith("cfat_", StringComparison.OrdinalIgnoreCase) == true)
+            sessionToken = null;
+
+        try
+        {
+            R2SettingsStore.Save(new R2SavedSettings(
+                NullIfEmpty(_rootDirectoryBox.Text) ?? string.Empty,
+                _endpointBox.Text.Trim(),
+                _bucketBox.Text.Trim(),
+                _prefixBox.Text.Trim(),
+                _customMappingsBox.Text,
+                NullIfEmpty(_accessKeyBox.Text),
+                NullIfEmpty(_secretKeyBox.Text),
+                sessionToken,
+                _onlyChangedBox.Checked));
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"本地 R2 配置保存失败：{exception.Message}");
+        }
     }
 
     private static string? NullIfEmpty(string value)

@@ -1,89 +1,93 @@
-# Sirius.ToolboxUI
+# ToolboxUI
 
-`Sirius.ToolboxUI` is the Chinese Windows Forms toolbox for MasterData, Chart, Episode, scene-cache, Episode-editor, and the combined MasterData/CDN/R2-sync workflow.
-It uses the same typed MasterMemory implementation as the CLI through `Sirius.MasterData` and the generated models in `lib/Sirius.Protocol.dll`.
+## English
 
-## Run
+`Sirius.ToolboxUI` is the only supported entry point. Its start center opens one
+instance of each tool window:
 
-```powershell
-dotnet run --project .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj
-```
+- MasterData editor: table/schema browsing, paging, primary-key lookup, JSON editing,
+  add/duplicate/delete, verification, Save and Save As, and the offline repack window;
+- offline MasterMemory repack: export typed JSON, edit the working copy, then rebuild
+  `mastermemory.db` against an unmodified baseline; tables that match the baseline or
+  decode to the same values keep their original payload block, so untouched tables are
+  byte-for-byte identical and only edited tables are re-encoded;
+- official MasterData sync: authentication, resumable download, generated-model
+  verification, manifest/state/publication output, optional typed JSON export, and
+  incremental CDN asset mirroring;
+- Chart and Episode tools;
+- Episode editor and Version 2 scene-index builder;
+- combined MasterData/CDN/R2 publication.
 
-You can also pass a database path directly:
+The scene-index window has independent CDN prefixes for Episode JSON `SourcePath` and
+scene BIN `RelativePath`. Metadata-only mode does not read BIN contents; normal mode
+computes SHA-256. Duplicate numeric IDs are rejected before output is replaced.
 
-```powershell
-dotnet run --project .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj -- .\mastermemory.db
-```
+The R2 window defaults to dry-run. It supports concurrency, retries, force upload,
+remote length/SHA-256 checks, DPAPI-protected saved credentials, custom mappings, and
+an “only upload local changes” baseline. A mapping such as
+`scenes-zh-cn=master-data/production/scenes-zh-cn` maps that directory below
+`assets/files` to the specified object prefix.
 
-The start window has six entries. Opening an entry hides the start window; closing the child window restores and activates the start window. Reopening an already open entry activates the existing child window.
+## Official MasterData / CDN sync window
 
-The Chart window converts SUS text, encodes/decodes ENC files, and runs the chart self-test. The Episode window supports JSON/BIN single-file operations, directory batch packing, BIN-to-JSON directory batch unpacking, and BIN inspection. The 剧情资源缓存 window scans Episode JSON and scene BIN directories to build or inspect a Version 2 `scene-assets.json` cache. The 剧情编辑器 window edits common dialogue/resource fields, preserves unknown wrapper metadata and advanced protocol fields, saves readable Chinese JSON, and exports verified BIN files.
+The window has two tabs. **账号与主数据** holds the API bootstrap URL, client version,
+registration name, platform, GameVersion, FM, login/access tokens, the output directory,
+and the toggles for forcing a MasterData re-download, exporting typed JSON, skipping
+MasterData, skipping CDN assets, and ignoring TLS errors. **CDN 资源** holds the asset
+categories (default `2d-assets,3d-assets,cri-assets`), an optional catalog template,
+concurrency, retries, timeout, User-Agent, and the toggles for skipping static-assets,
+skipping episode scenes, updating only catalogs plus the manifest, and forcing a full
+asset re-download.
 
-## 主数据 / CDN / R2 全量同步
+Both tabs run through one 开始同步 action; 取消 stops the current run. The log pane
+streams the sync stage and the asset mirror's per-file progress. The result summary
+reports the MasterData version, verification row/table counts and SHA-256, and the asset
+object/download/404/removed/catalog counts. See
+[official CDN mirror](asset/cdn-mirror.md) for the asset-side rules.
 
-合并后的同步窗口读取所选目录下的 `master/manifest.json`、`master/mastermemory.db`、`assets/catalogs` 和 `assets/files`，一次性预览或同步 MasterData、目录清单和 CDN 资源。MasterData 清单中的 `Uri` 会映射为 `master-data/production/...` 对象键，可通过对象键前缀调整发布路径。窗口默认勾选“仅预览，不访问 R2”，确认完整对象映射后再取消勾选并填写 R2 S3 地址、存储桶和凭据。
+## Offline repack window
 
-访问密钥也可以通过 `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY` 和可选的 `R2_SESSION_TOKEN` 环境变量预填；秘密字段不会写入日志。非强制上传会先以 HEAD 请求检查远端 `Content-Length` 和 `x-amz-meta-sha256`，一致时跳过上传；网络失败会按设置重试。
+Open it from the home screen or from the MasterData editor's `数据库 → 离线重打包...`
+menu. Fill in the source database, the working JSON directory, an optional baseline
+JSON directory, and the output database, then run `1. 导出 JSON` followed by
+`2. 重打包数据库`. Keep `严格字节校验` enabled for the strict round trip: after a
+no-op export the output must hash identically to the source. The log reports the table
+count, which tables were rebuilt, which kept their original blocks, and both SHA-256
+values. The end-to-end workflow is also described in the server repository's
+`docs/masterdata-tool.md`.
 
-无界面的等价命令（MasterData 会自动包含在全量同步中）：
+## 中文
 
-```powershell
-dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- r2 sync .\output --dry-run
-```
+`Sirius.ToolboxUI` 是唯一支持的入口。首页分别打开主数据编辑器、官方 MasterData
+同步、谱面、剧情、剧情编辑器、Version 2 场景索引和 MasterData/CDN/R2 发布窗口。
 
-实现依据 [Cloudflare R2 S3 API](https://developers.cloudflare.com/r2/api/s3/api/) 的 `PutObject` 兼容接口，使用 R2 要求的 `auto` 区域 SigV4 签名。
+场景索引窗口可分别配置剧情 JSON 的 `SourcePath` 与场景 BIN 的 `RelativePath` CDN
+前缀；仅元数据模式不读取 BIN，普通模式计算 SHA-256，重复数字 ID 会在写入前拒绝。
 
-窗口迁移了旧 AssetTool 的完整发布流程：扫描 `master`、`assets/catalogs`、`assets/files`，按旧规则将 MasterData、源站目录和 scenes/notations 映射到 R2 对象键；支持并发上传、失败重试、强制上传、预览映射、远端长度与 `x-amz-meta-sha256` 比较，以及本地哈希缓存复用。
+R2 窗口默认仅预览，支持并发、重试、强制上传、远端长度/SHA-256 检查、DPAPI
+保护的凭据、自定义目录映射和“仅上传本地变更”。
 
-实际同步会维护：
+## 官方 MasterData / CDN 同步窗口
 
-- `assets/r2-hash-cache.json`：按本地文件长度和 UTC 修改时间复用 SHA-256，也会从 `assets/manifests/cdn_*.json` 中播种已完成资源的哈希；
-- `assets/r2-object-map.tsv`：预览模式下写入完整的本地路径、对象键、大小、Content-Type 和 Content-Encoding 映射。
+窗口分两个页签。**账号与主数据** 页包含 API 地址、客户端版本、注册名、平台、
+GameVersion、FM、登录/访问令牌、输出目录，以及强制重下主数据、导出类型化 JSON、
+跳过 MasterData、跳过 CDN 资源、忽略 TLS 证书错误等开关。**CDN 资源** 页包含资源分类
+（默认 `2d-assets,3d-assets,cri-assets`）、可选 catalog 模板、并发、重试、超时、
+User-Agent，以及跳过 static-assets、跳过剧集场景、仅更新 catalog 与清单、强制重下
+全部资源对象等开关。
 
-CLI 等价入口：
+CDN 产物直接写入所选输出目录的 `catalogs`、`files`、`manifests` 与 `indexes`，不会再额外
+创建一层 `assets` 子目录。MasterData 仍位于同一输出目录的 `master` 子目录。
 
-```powershell
-dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- r2 sync .\output --dry-run
-dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- r2 sync .\output --concurrency 16 --retries 5
-```
+两个页签共用一次“开始同步”，“取消”会停止当前运行。日志区按阶段输出同步进度和
+镜像的逐文件进度；结束时会汇总 MasterData 版本、校验表/行数与 SHA-256，以及资源的
+对象数、下载数、404 数、移除数和 catalog 数。资源侧规则详见
+[官方 CDN 镜像](asset/cdn-mirror.md)。
 
-`r2 cdn` 是 `r2 sync` 的别名；旧式 `--r2-sync --dir <输出目录>`、`--r2-endpoint`、`--r2-bucket`、`--r2-prefix`、`--r2-concurrency`、`--r2-retries`、`--r2-force` 和 `--r2-dry-run` 参数仍可用于迁移脚本。
+## 离线重打包窗口
 
-## 剧情资源缓存
-
-Select the Episode JSON directory, scene BIN directory, and output cache path. Optional MasterData/source revision values are stored in the cache. “只记录文件元数据” leaves `Sha256` and `HashAlgorithm` empty and avoids reading BIN contents; otherwise the cache computes SHA-256. The generated table shows ID, relative BIN path, JSON source, size, hash, and mode. Duplicate numeric BIN IDs are rejected before writing output.
-
-The same operation is available headlessly:
-
-```powershell
-dotnet run --project .\src\Sirius.AssetTool\Sirius.AssetTool.csproj -- episode cache .\episode-json .\scene-bin -o .\scene-assets.json --metadata-only
-```
-
-## 剧情编辑器
-
-Open a wrapper JSON or a top-level `EpisodeDetail` array. The left list shows order, speaker, and phrase; the right side edits IDs/order, speaker/title/effect, background and audio resources, voice, and dialogue text. Apply changes before switching records, or choose whether to apply/discard pending edits when prompted. New, duplicate, and delete actions update the in-memory document; save/另存为 keeps unknown wrapper properties, and 导出 BIN uses the shared MessagePack/LZ4 codec plus a round-trip verification.
-
-## Current UI features
-
-- open a `mastermemory.db` file or drag one onto the window;
-- table list with table-name filtering and row counts;
-- paged record grid with generated schema columns;
-- primary-key lookup, including composite keys;
-- schema view with property type, MessagePack key, writability, and primary-key flags;
-- JSON editor for the selected typed record;
-- add a blank record or duplicate an existing record and edit its primary key;
-- update and delete records;
-- verify the complete database with the generated MasterMemory loader/validator;
-- save or save-as with an automatic `.bak` of an overwritten destination.
-
-## Editing model
-
-Opening a database creates a temporary working copy. Add/update/delete operations modify only that working copy until **Save** or **Save As** is used. Closing with unsaved changes requires confirmation.
-
-Every write goes through `MasterMemoryDatabaseService`. Only the changed table is rebuilt; the untouched table blocks are preserved from the source database. The rebuilt database is then loaded again through `Sirius.Protocol.Shared.MemoryDatabase`, and the generated validator is invoked when available.
-
-The record editor accepts the same JSON shapes as the CLI `db add` and `db update` commands. For an existing record, ToolboxUI computes a top-level JSON delta and submits only changed properties, so unchanged read-only model properties are not written back. **Duplicate** keeps writable properties only; change the copied primary key before adding it. For nested objects and arrays, edit the JSON representation directly.
-
-## Platform
-
-The UI project targets `net10.0-windows` and uses WinForms. The CLI and asset projects remain ordinary `net10.0` applications.
+可从首页，或主数据编辑器的「数据库 → 离线重打包...」菜单打开。填入源数据库、
+工作 JSON 目录、可选的 baseline JSON 目录与输出数据库，然后依次执行
+「1. 导出 JSON」与「2. 重打包数据库」。严格回包时保持「严格字节校验」开启：未改动
+的导出重打包后必须与源数据库哈希一致。日志会输出表数量、哪些表被重建、哪些表保留
+原始块，以及两个 SHA-256。

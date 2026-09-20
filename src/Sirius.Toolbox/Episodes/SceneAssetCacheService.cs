@@ -5,7 +5,7 @@ using System.Text.Encodings.Web;
 using Sirius.Toolbox.Episodes;
 using Sirius.Toolbox.IO;
 
-namespace Sirius.AssetTool.Episodes;
+namespace Sirius.Toolbox.Episodes;
 
 public sealed record SceneAssetCacheOptions(
     bool MetadataOnly,
@@ -159,7 +159,19 @@ public sealed class SceneAssetCacheService
         foreach (var path in Directory.EnumerateFiles(directory, "*.json", SearchOption.AllDirectories)
                      .OrderBy(static path => path, StringComparer.OrdinalIgnoreCase))
         {
-            var input = EpisodeCodec.ReadJson(path);
+            EpisodeInput input;
+            try
+            {
+                input = EpisodeCodec.ReadJson(path);
+            }
+            catch (UnsupportedEpisodeFormatException)
+            {
+                // StoryType=5 files are PosterStoryMaster records from master
+                // data, not scene BIN sources. They must not become fake scene
+                // cache entries or be packed with an empty Phrase field.
+                continue;
+            }
+
             var episodeId = input.EpisodeId;
             if (episodeId <= 0)
                 episodeId = ParseNumericFileId(path, "JSON");

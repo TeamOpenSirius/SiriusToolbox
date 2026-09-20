@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace Sirius.AssetTool.Charts.Sirius;
+namespace Sirius.Toolbox.Charts.Sirius;
 
 public enum SiriusNoteType
 {

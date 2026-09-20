@@ -4,7 +4,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Sirius.AssetTool.R2;
+namespace Sirius.Toolbox.R2;
 
 internal sealed class R2S3ObjectStoreClient : IDisposable
 {
@@ -37,7 +37,7 @@ internal sealed class R2S3ObjectStoreClient : IDisposable
 
         _accessKeyId = accessKeyId.Trim();
         _secretAccessKey = secretAccessKey.Trim();
-        _sessionToken = string.IsNullOrWhiteSpace(sessionToken) ? null : sessionToken.Trim();
+        _sessionToken = NormalizeSessionToken(sessionToken);
         _bucketBaseUri = BuildBucketBaseUri(endpoint, bucketValue.Trim());
 
         var handler = new SocketsHttpHandler
@@ -124,7 +124,11 @@ internal sealed class R2S3ObjectStoreClient : IDisposable
             HttpMethod.Put,
             entry.ObjectKey,
             sha256,
-            sha256);
+            sha256,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["content-type"] = content.Headers.ContentType.ToString()
+            });
         request.Content = content;
         request.Headers.CacheControl = new CacheControlHeaderValue
         {
@@ -144,7 +148,8 @@ internal sealed class R2S3ObjectStoreClient : IDisposable
         HttpMethod method,
         string objectKey,
         string payloadHash,
-        string? metadataSha256)
+        string? metadataSha256,
+        IReadOnlyDictionary<string, string>? additionalHeaders = null)
     {
         var uri = BuildObjectUri(objectKey);
         var now = DateTimeOffset.UtcNow;
@@ -162,6 +167,11 @@ internal sealed class R2S3ObjectStoreClient : IDisposable
             headers["x-amz-meta-sha256"] = metadataSha256;
         if (_sessionToken is not null)
             headers["x-amz-security-token"] = _sessionToken;
+        if (additionalHeaders is not null)
+        {
+            foreach (var pair in additionalHeaders)
+                headers[pair.Key.ToLowerInvariant()] = pair.Value;
+        }
 
         var canonicalHeaders = string.Concat(headers.Select(item => $"{item.Key}:{NormalizeHeader(item.Value)}\n"));
         var signedHeaders = string.Join(';', headers.Keys);
@@ -236,6 +246,19 @@ internal sealed class R2S3ObjectStoreClient : IDisposable
 
     private static string NormalizeHeader(string value) =>
         string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    private static string? NormalizeSessionToken(string? sessionToken)
+    {
+        if (string.IsNullOrWhiteSpace(sessionToken))
+            return null;
+
+        var trimmed = sessionToken.Trim();
+        // cfat_ tokens are Cloudflare API tokens for the REST API. They are not
+        // AWS temporary credentials and must not be sent as x-amz-security-token.
+        return trimmed.StartsWith("cfat_", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : trimmed;
+    }
 
     private static byte[] Hmac(byte[] key, byte[] value) => HMACSHA256.HashData(key, value);
 

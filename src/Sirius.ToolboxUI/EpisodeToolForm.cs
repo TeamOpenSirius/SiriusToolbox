@@ -1,6 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
-using Sirius.AssetTool.Episodes;
+using Sirius.Toolbox.Episodes;
 
 namespace Sirius.ToolboxUI;
 
@@ -261,15 +261,18 @@ public sealed class EpisodeToolForm : Form
     private void AppendBatchResult(string inputDirectory, EpisodeBatchResult result)
     {
         var succeeded = result.Items.Count(item => item.Succeeded);
-        var failed = result.Items.Count - succeeded;
+        var skipped = result.Items.Count(item => item.Skipped);
+        var failed = result.Items.Count - succeeded - skipped;
         foreach (var item in result.Items)
         {
             var relative = Path.GetRelativePath(inputDirectory, item.InputPath);
-            AppendLog(item.Succeeded
-                ? $"成功：{relative}，{item.ByteCount} 字节"
-                : $"失败：{relative}，{item.Error}");
+            AppendLog(item.Skipped
+                ? $"跳过：{relative}，{item.Error}"
+                : item.Succeeded
+                    ? $"成功：{relative}，{item.ByteCount} 字节"
+                    : $"失败：{relative}，{item.Error}");
         }
-        AppendLog($"批量完成：成功 {succeeded}，失败 {failed}，输出目录：{result.OutputDirectory}");
+        AppendLog($"批量完成：成功 {succeeded}，跳过 {skipped}，失败 {failed}，输出目录：{result.OutputDirectory}");
     }
 
     private void AppendLog(string message)

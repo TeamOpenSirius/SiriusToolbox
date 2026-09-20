@@ -2,8 +2,8 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>Sirius.AssetTool.Tests</RootNamespace>
-    <AssemblyName>Sirius.AssetTool.Tests</AssemblyName>
+    <RootNamespace>Sirius.Toolbox.Tests</RootNamespace>
+    <AssemblyName>Sirius.Toolbox.Tests</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

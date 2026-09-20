@@ -6,16 +6,16 @@ try {
     dotnet restore .\SiriusTools.sln
     if ($LASTEXITCODE -ne 0) { throw "dotnet restore 失败。" }
 
-    dotnet restore .\tests\Sirius.AssetTool.Tests\Sirius.AssetTool.Tests.csproj
+    dotnet restore .\tests\Sirius.Toolbox.Tests\Sirius.Toolbox.Tests.csproj
     if ($LASTEXITCODE -ne 0) { throw "服务测试项目还原失败。" }
 
     dotnet build .\SiriusTools.sln -c Release --no-restore
     if ($LASTEXITCODE -ne 0) { throw "解决方案构建失败。" }
 
-    dotnet build .\tests\Sirius.AssetTool.Tests\Sirius.AssetTool.Tests.csproj -c Release --no-restore
+    dotnet build .\tests\Sirius.Toolbox.Tests\Sirius.Toolbox.Tests.csproj -c Release --no-restore
     if ($LASTEXITCODE -ne 0) { throw "服务测试项目构建失败。" }
 
-    dotnet run --project .\tests\Sirius.AssetTool.Tests\Sirius.AssetTool.Tests.csproj -c Release --no-build --no-restore
+    dotnet run --project .\tests\Sirius.Toolbox.Tests\Sirius.Toolbox.Tests.csproj -c Release --no-build --no-restore
     if ($LASTEXITCODE -ne 0) { throw "服务回归测试失败。" }
 
     dotnet run --project .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj -c Release --no-build -- --self-test-ui

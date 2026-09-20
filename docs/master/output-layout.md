@@ -1,104 +1,19 @@
-# Output Layout
-
-With the default `--dir output`, `Sirius.MasterTool` writes:
+# Output layout
 
 ```text
 output/
-├─ state.json
-├─ publication.json
-└─ master/
-   ├─ mastermemory.db
-   ├─ mastermemory.db.bck       optional
-   ├─ mastermemory.db.part      present only during/incomplete download
-   ├─ manifest.json
-   └─ json/
-      ├─ .complete
-      ├─ <TableName>.json
-      └─ ...
+  state.json                   private authentication/download state
+  master/
+    mastermemory.db            verified downloaded database
+    mastermemory.db.bck        previous database when refreshed
+    mastermemory.db.part       resumable temporary download
+    manifest.json              version, URI, timestamp, size and SHA-256
+    json/<TableName>.json      optional typed export
+  assets/                      scene/catalog/CDN files and R2 cache/map files
 ```
 
-## `state.json`
+# 输出布局
 
-Private runtime state used to resume synchronization and reuse credentials. It includes tokens, endpoints, client/version parameters, current MasterData state, and update time.
-
-See [Authentication and State](authentication.md).
-
-## `master/mastermemory.db`
-
-The downloaded MasterMemory database from the current MasterData manifest.
-
-The final download URL is built from:
-
-- `EnvironmentResult.MasterDataUrl`;
-- the manifest `Uri`;
-- the manifest SAS token, when present.
-
-## `master/mastermemory.db.part`
-
-Temporary/resumable download file. Existing partial data is used as the starting offset for an HTTP Range request.
-
-The file is moved to `mastermemory.db` after a successful download.
-
-## `master/mastermemory.db.bck`
-
-When a refresh is required and `mastermemory.db` already exists, the current database is copied to this path before downloading the replacement.
-
-Only one backup path is maintained; a later refresh replaces it.
-
-## `master/manifest.json`
-
-Local metadata generated after the database has been downloaded or confirmed current.
-
-It contains:
-
-- `Version`;
-- `Uri`;
-- `PublishTimestamp`;
-- `AssetVersion`;
-- `AssetUrl`;
-- `StaticContentUrl`;
-- `PhotoContentUrl`;
-- local `PublishedAt` time;
-- database `Size`;
-- lowercase SHA-256 in `Sha256`.
-
-## `master/json/`
-
-When JSON export is enabled, every MasterMemory table is written to:
-
-```text
-master/json/<TableName>.json
-```
-
-Table names come from the MasterMemory header.
-
-## `master/json/.complete`
-
-Export completion/version marker:
-
-```text
-object-schema-v1:<MasterDataVersion>
-```
-
-It allows an unchanged JSON export to be skipped independently from the database download decision.
-
-## `publication.json`
-
-Machine-readable synchronization publication metadata. The current model uses `SchemaVersion = 1` and includes:
-
-| Field | Meaning |
-| --- | --- |
-| `MasterDataVersion` | Current MasterData version. |
-| `SourceMasterDataVersion` | Source version recorded for the current database. |
-| `MasterDataPublishTimestamp` | Manifest publish timestamp. |
-| `MasterDataUri` | Manifest content URI. |
-| `MasterDataFile` | Local database path. |
-| `MasterDataSha256` | SHA-256 of the local database. |
-| `MasterJsonDirectory` | Per-table JSON directory. |
-| `AssetVersion` | Environment asset version. |
-| `AssetSourceUrl` | Environment asset URL. |
-| `StaticContentSourceUrl` | Environment static-content URL. |
-| `CdnManifest` | Newest `assets/manifests/cdn_*.json` under the output root, when present. |
-| `PublishedAt` | Time the publication file was written. |
-
-`MasterDataPolicy` and `MasterIndexDatabase` are currently emitted as empty strings.
+`state.json` 是私有认证状态；`master` 保存校验后的数据库、备份、断点下载临时文件、
+清单和可选 JSON。官方同步把 `catalogs`、`files`、`manifests`、`indexes` 直接写入所选目录，
+不再额外创建 `assets` 子目录；R2 发布窗口仍兼容项目根目录下的既有 `assets` 布局。

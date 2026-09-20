@@ -3,7 +3,6 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Windows.Forms;
 using Sirius.MasterData;
-using Sirius.MasterTool.MasterMemory;
 using Sirius.Toolbox.IO;
 
 namespace Sirius.ToolboxUI;
@@ -165,6 +164,8 @@ public sealed class MasterToolForm : Form
         var databaseMenu = new ToolStripMenuItem("数据库");
         databaseMenu.DropDownItems.Add("校验", null, async (_, _) => await VerifyAsync());
         databaseMenu.DropDownItems.Add("刷新", null, async (_, _) => await RefreshAllAsync());
+        databaseMenu.DropDownItems.Add(new ToolStripSeparator());
+        databaseMenu.DropDownItems.Add("离线重打包...", null, (_, _) => OpenRepackWindow());
         menu.Items.Add(fileMenu);
         menu.Items.Add(databaseMenu);
         MainMenuStrip = menu;
@@ -797,6 +798,14 @@ public sealed class MasterToolForm : Form
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         });
+    }
+
+    private void OpenRepackWindow()
+    {
+        var window = new MasterMemoryRepackForm();
+        if (_sourcePath is not null)
+            window.PresetSource(_sourcePath);
+        window.Show(this);
     }
 
     private async Task SaveAsync()

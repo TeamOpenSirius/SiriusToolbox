@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace Sirius.AssetTool.Charts.Sus;
+namespace Sirius.Toolbox.Charts.Sus;
 
 public static partial class SusParser
 {

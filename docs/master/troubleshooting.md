@@ -1,39 +1,11 @@
-# Sirius.MasterTool Troubleshooting
+# MasterData troubleshooting
 
-## `Sirius.Protocol` cannot be loaded
+- Ensure `E:\Ymst\Projects\SiriusData` exists beside this repository.
+- For authentication errors, verify the application version and tokens in the sync window.
+- The editor rejects databases that cannot load through generated `MemoryDatabase` tables.
+- If saving fails, close other programs using the file or use Save As.
 
-Ensure this file exists:
+# 主数据故障排查
 
-```text
-lib/Sirius.Protocol.dll
-```
-
-The supplied assembly targets `net10.0`, so use a .NET 10 SDK/runtime.
-
-## A table name is unknown
-
-Use:
-
-```powershell
-Sirius.MasterTool.exe db tables mastermemory.db
-```
-
-Table names come directly from `MemoryDatabase.GetMetaDatabase()` and are case-sensitive when resolved by MasterMemory.
-
-## A key cannot be parsed
-
-Inspect the primary-key fields:
-
-```powershell
-Sirius.MasterTool.exe db schema mastermemory.db TableName
-```
-
-For a one-field key, `--key 123` is accepted. For composite keys use `--key "A=123;B=4"`.
-
-## An update/add fails type conversion
-
-Use `db schema` to inspect the generated property types. `--set` values are interpreted as JSON when possible, so strings containing JSON syntax should be quoted as JSON strings or supplied through `--json`/`--data`.
-
-## The rewritten DB fails validation
-
-The command will not accept a rewritten DB unless the full output loads through `Sirius.Protocol.Shared.MemoryDatabase`. For `--in-place`, the original `<input>.bak` remains available.
+确认同级 SiriusData 存在；认证失败时检查客户端版本与令牌；数据库无法通过生成的
+`MemoryDatabase` 加载时会被拒绝；保存失败时关闭占用文件的程序或改用另存为。

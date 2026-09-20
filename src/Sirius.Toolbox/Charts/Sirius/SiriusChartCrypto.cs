@@ -2,7 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Sirius.AssetTool.Charts.Sirius;
+namespace Sirius.Toolbox.Charts.Sirius;
 
 public static class SiriusChartCrypto
 {

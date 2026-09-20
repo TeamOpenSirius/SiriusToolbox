@@ -1,18 +1,20 @@
 using System.Net.Http.Headers;
+using Sirius.Toolbox.Assets;
 using Sirius.Toolbox.Master.Protocol;
 using Sirius.Toolbox.Master.Serialization;
 
-namespace Sirius.MasterTool;
+namespace Sirius.Toolbox.Master.Networking;
 
-internal sealed class SiriusApiClient : IDisposable
+public sealed class SiriusApiClient : IDisposable, IEpisodeDetailApi
 {
     private readonly HttpClient _http;
-    private readonly DownloaderOptions _options;
+    private readonly MasterDownloadOptions _options;
     private string? _bearerToken;
     private string? _assetVersion;
     private string? _masterDataVersion;
+    private string _apiBase;
 
-    public SiriusApiClient(DownloaderOptions options)
+    public SiriusApiClient(MasterDownloadOptions options)
     {
         _options = options;
         var handler = new SocketsHttpHandler
@@ -27,6 +29,7 @@ internal sealed class SiriusApiClient : IDisposable
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("BestHTTP/2 v2.8.5");
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.msgpack"));
         _bearerToken = options.AccessToken;
+        _apiBase = options.ApiBootstrapUrl;
     }
 
     public void SetBearerToken(string? token) => _bearerToken = token;
@@ -34,6 +37,9 @@ internal sealed class SiriusApiClient : IDisposable
     public void SetAssetVersion(string? assetVersion) => _assetVersion = assetVersion;
 
     public void SetMasterDataVersion(string? masterDataVersion) => _masterDataVersion = masterDataVersion;
+
+    /// <summary>切换认证后的 API 根地址（/api/Environment 返回的 ApiEndpoint）。</summary>
+    public void SetApiBase(string apiBase) => _apiBase = apiBase;
 
     public Task<EnvironmentResult> GetEnvironmentAsync(CancellationToken ct)
     {
@@ -66,6 +72,37 @@ internal sealed class SiriusApiClient : IDisposable
     public Task<MasterDataManifest> GetMasterManifestAsync(string apiBase, CancellationToken ct)
         => SendAsync<object, MasterDataManifest>(HttpMethod.Get,
             Combine(apiBase, "/api/data/master"), null, true, ct);
+
+    /// <summary>
+    /// 查询单个剧集的详情以取得场景资源地址。官方客户端使用无 body 的 GET，
+    /// 且剧集 id 同时出现在路由和查询串中。
+    /// Queries a single episode detail to obtain its scene asset source. The official client
+    /// sends a bodyless GET with the episode id duplicated in the route and query string.
+    /// </summary>
+    public async Task<Sirius.Protocol.Shared.EpisodeResult> GetEpisodeDetailsAsync(
+        string apiBase,
+        long episodeMasterId,
+        CancellationToken ct)
+    {
+        var path = $"/api/Episodes/{episodeMasterId}/GetDetails?episodeMasterId={episodeMasterId}";
+        return await SendAsync<object, Sirius.Protocol.Shared.EpisodeResult>(
+            HttpMethod.Get,
+            Combine(apiBase, path),
+            null,
+            true,
+            ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<EpisodeSceneApiResult> GetEpisodeDetailAsync(
+        long episodeMasterId,
+        CancellationToken cancellationToken)
+    {
+        var details = await GetEpisodeDetailsAsync(_apiBase, episodeMasterId, cancellationToken);
+        return new EpisodeSceneApiResult(
+            details.EpisodeTitle ?? string.Empty,
+            details.EpisodeDetailAssetSource ?? string.Empty);
+    }
 
     public async Task DownloadFileAsync(Uri uri, string destination, CancellationToken ct)
     {

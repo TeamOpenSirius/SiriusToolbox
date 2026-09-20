@@ -1,9 +1,9 @@
 using System.Text;
-using Sirius.AssetTool.Charts.Conversion;
-using Sirius.AssetTool.Charts.Sirius;
-using SusParser = Sirius.AssetTool.Charts.Sus.SusParser;
+using Sirius.Toolbox.Charts.Conversion;
+using Sirius.Toolbox.Charts.Sirius;
+using SusParser = Sirius.Toolbox.Charts.Sus.SusParser;
 
-namespace Sirius.AssetTool.Charts;
+namespace Sirius.Toolbox.Charts;
 
 public sealed record ChartConvertOptions(bool IgnoreWaveOffset, bool Strict);
 

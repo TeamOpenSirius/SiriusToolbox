@@ -1,6 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
-using Sirius.AssetTool.Episodes;
+using Sirius.Toolbox.Episodes;
 
 namespace Sirius.ToolboxUI;
 
@@ -11,6 +11,8 @@ public sealed class SceneAssetCacheForm : Form
     private readonly TextBox _outputBox = new() { Dock = DockStyle.Fill };
     private readonly TextBox _masterDataVersionBox = new() { Dock = DockStyle.Fill, PlaceholderText = "可留空" };
     private readonly TextBox _sourceRevisionBox = new() { Dock = DockStyle.Fill, PlaceholderText = "可留空" };
+    private readonly TextBox _episodePathPrefixBox = new() { Dock = DockStyle.Fill, Text = "episode" };
+    private readonly TextBox _scenePathPrefixBox = new() { Dock = DockStyle.Fill, Text = "scenes" };
     private readonly CheckBox _metadataOnlyBox = new() { AutoSize = true, Text = "只记录文件元数据（不计算 SHA-256）", Checked = true };
     private readonly CheckBox _overwriteBox = new() { AutoSize = true, Text = "允许覆盖已有缓存" };
     private readonly Button _buildButton = new() { AutoSize = true, Text = "建立缓存" };
@@ -73,7 +75,7 @@ public sealed class SceneAssetCacheForm : Form
             ColumnCount = 3,
             Dock = DockStyle.Fill,
             Padding = new Padding(10),
-            RowCount = 7
+            RowCount = 9
         };
         form.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -87,6 +89,12 @@ public sealed class SceneAssetCacheForm : Form
         form.Controls.Add(new Label { AutoSize = true, Anchor = AnchorStyles.Left, Text = "来源修订号：" }, 0, 4);
         form.Controls.Add(_sourceRevisionBox, 1, 4);
         form.SetColumnSpan(_sourceRevisionBox, 2);
+        form.Controls.Add(new Label { AutoSize = true, Anchor = AnchorStyles.Left, Text = "剧情 JSON CDN 前缀：" }, 0, 5);
+        form.Controls.Add(_episodePathPrefixBox, 1, 5);
+        form.SetColumnSpan(_episodePathPrefixBox, 2);
+        form.Controls.Add(new Label { AutoSize = true, Anchor = AnchorStyles.Left, Text = "场景 BIN CDN 前缀：" }, 0, 6);
+        form.Controls.Add(_scenePathPrefixBox, 1, 6);
+        form.SetColumnSpan(_scenePathPrefixBox, 2);
 
         var options = new FlowLayoutPanel
         {
@@ -99,16 +107,16 @@ public sealed class SceneAssetCacheForm : Form
         options.Controls.Add(_overwriteBox);
         options.Controls.Add(_buildButton);
         options.Controls.Add(_openButton);
-        form.Controls.Add(options, 0, 5);
+        form.Controls.Add(options, 0, 7);
         form.SetColumnSpan(options, 3);
 
         var help = new Label
         {
             AutoSize = true,
             ForeColor = SystemColors.GrayText,
-            Text = "缓存会按 BIN 文件名匹配 episode JSON；重复 Episode ID 会拒绝输出。"
+            Text = "SourcePath 和 RelativePath 使用可自定义的 CDN 前缀；重复 Episode ID 会拒绝输出。"
         };
-        form.Controls.Add(help, 0, 6);
+        form.Controls.Add(help, 0, 8);
         form.SetColumnSpan(help, 3);
 
         var view = new SplitContainer
@@ -130,7 +138,7 @@ public sealed class SceneAssetCacheForm : Form
             Dock = DockStyle.Fill,
             RowCount = 2
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 250));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 320));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.Controls.Add(form, 0, 0);
         root.Controls.Add(view, 0, 1);
@@ -200,7 +208,9 @@ public sealed class SceneAssetCacheForm : Form
             var options = new SceneAssetCacheOptions(
                 _metadataOnlyBox.Checked,
                 NullIfEmpty(_masterDataVersionBox.Text),
-                NullIfEmpty(_sourceRevisionBox.Text));
+                NullIfEmpty(_sourceRevisionBox.Text),
+                NullIfEmpty(_episodePathPrefixBox.Text) ?? "episode",
+                NullIfEmpty(_scenePathPrefixBox.Text) ?? "scenes");
             var result = await Task.Run(() => new SceneAssetCacheService().Build(
                 episodeDirectory,
                 sceneDirectory,

@@ -7,7 +7,7 @@ using Sirius.Toolbox.Episodes;
 using Sirius.Toolbox.Episodes.Protocol;
 using Sirius.Toolbox.IO;
 
-namespace Sirius.AssetTool.Episodes;
+namespace Sirius.Toolbox.Episodes;
 
 public sealed class EpisodeEditorDocument
 {

@@ -1,4 +1,4 @@
-namespace Sirius.AssetTool.Charts.Sus;
+namespace Sirius.Toolbox.Charts.Sus;
 
 public sealed record SusObject(
     int Measure,

@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 
-namespace Sirius.AssetTool.R2;
+namespace Sirius.Toolbox.R2;
 
 internal sealed class R2FileHashCache
 {
@@ -48,6 +48,9 @@ internal sealed class R2FileHashCache
     }
 
     public bool TryGet(R2UploadEntry entry, out string sha256)
+        => TryGet(entry, out sha256, out _);
+
+    public bool TryGet(R2UploadEntry entry, out string sha256, out bool remoteVerified)
     {
         var info = new FileInfo(entry.LocalPath);
         var key = GetKey(entry.LocalPath);
@@ -57,21 +60,30 @@ internal sealed class R2FileHashCache
             cached.Sha256.Length == 64)
         {
             sha256 = cached.Sha256;
+            remoteVerified = cached.RemoteVerified;
             return true;
         }
 
         sha256 = string.Empty;
+        remoteVerified = false;
         return false;
     }
 
-    public void Set(R2UploadEntry entry, string sha256)
+    public bool HasRemoteVerifiedBaseline(R2UploadEntry entry)
+    {
+        var key = GetKey(entry.LocalPath);
+        return _entries.TryGetValue(key, out var cached) && cached.RemoteVerified;
+    }
+
+    public void Set(R2UploadEntry entry, string sha256, bool remoteVerified = false)
     {
         var info = new FileInfo(entry.LocalPath);
         _entries[GetKey(entry.LocalPath)] = new R2FileHashCacheEntry
         {
             Length = info.Length,
             LastWriteTimeUtcTicks = info.LastWriteTimeUtc.Ticks,
-            Sha256 = sha256
+            Sha256 = sha256,
+            RemoteVerified = remoteVerified
         };
     }
 
@@ -115,7 +127,8 @@ internal sealed class R2FileHashCache
                 {
                     Length = info.Length,
                     LastWriteTimeUtcTicks = info.LastWriteTimeUtc.Ticks,
-                    Sha256 = record.Sha256.ToLowerInvariant()
+                    Sha256 = record.Sha256.ToLowerInvariant(),
+                    RemoteVerified = false
                 };
                 seeded++;
             }
@@ -177,6 +190,7 @@ internal sealed class R2FileHashCacheEntry
     public long Length { get; set; }
     public long LastWriteTimeUtcTicks { get; set; }
     public string Sha256 { get; set; } = string.Empty;
+    public bool RemoteVerified { get; set; }
 }
 
 internal sealed class R2AssetManifestDocument

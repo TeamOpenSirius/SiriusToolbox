@@ -1,6 +1,6 @@
-namespace Sirius.MasterTool;
+namespace Sirius.Toolbox.Master.Networking;
 
-internal sealed class DownloaderOptions
+public sealed class MasterDownloadOptions
 {
     public string OutputDirectory { get; set; } = "output";
     public string ApiBootstrapUrl { get; set; } = "https://api.wds-stellarium.com";

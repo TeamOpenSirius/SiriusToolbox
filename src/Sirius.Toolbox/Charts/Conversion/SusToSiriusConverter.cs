@@ -1,7 +1,7 @@
-using Sirius.AssetTool.Charts.Sirius;
-using Sirius.AssetTool.Charts.Sus;
+using Sirius.Toolbox.Charts.Sirius;
+using Sirius.Toolbox.Charts.Sus;
 
-namespace Sirius.AssetTool.Charts.Conversion;
+namespace Sirius.Toolbox.Charts.Conversion;
 
 public sealed class ConversionOptions
 {

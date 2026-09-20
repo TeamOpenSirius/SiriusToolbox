@@ -31,6 +31,12 @@ public static class EpisodeCodec
             CommentHandling = JsonCommentHandling.Skip
         });
 
+        if (LooksLikePosterStory(root.RootElement))
+        {
+            throw new UnsupportedEpisodeFormatException(
+                $"检测到特殊剧情主数据格式：{Path.GetFileName(path)}。它属于 PosterStoryMaster，不是 scenes/*.bin；为避免丢失 Description 正文，批量场景打包将跳过此文件。" );
+        }
+
         EpisodeJsonDocument? wrapper = null;
         EpisodeDetailResult[]? details;
 
@@ -53,7 +59,9 @@ public static class EpisodeCodec
             throw new InvalidDataException("JSON 中没有可用的 EpisodeDetail 数组。");
         }
 
-        Validate(details, wrapper?.EpisodeId ?? 0);
+        var wrapperEpisodeId = wrapper?.EpisodeId ?? 0;
+        InheritWrapperEpisodeId(details, wrapperEpisodeId);
+        Validate(details, wrapperEpisodeId);
         return new EpisodeInput(wrapper, details);
     }
 
@@ -112,6 +120,80 @@ public static class EpisodeCodec
         AtomicFile.WriteAllText(outputPath, json + Environment.NewLine);
     }
 
+    public static bool IsPosterStoryJson(string path)
+    {
+        var json = File.ReadAllText(path, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true));
+        using var root = JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip
+        });
+        return LooksLikePosterStory(root.RootElement);
+    }
+
+    private static bool LooksLikePosterStory(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (TryGetPropertyIgnoreCase(root, "StoryType", out var storyType) &&
+            storyType.ValueKind == JsonValueKind.Number &&
+            storyType.TryGetInt32(out var storyTypeValue) &&
+            storyTypeValue == 5)
+        {
+            return true;
+        }
+
+        if (!TryGetPropertyIgnoreCase(root, "EpisodeDetail", out var episodeDetail) ||
+            episodeDetail.ValueKind != JsonValueKind.Array ||
+            episodeDetail.GetArrayLength() == 0 ||
+            episodeDetail[0].ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        var firstDetail = episodeDetail[0];
+        return TryGetPropertyIgnoreCase(firstDetail, "Description", out _) &&
+               TryGetPropertyIgnoreCase(firstDetail, "EpisodeType", out _) &&
+               !TryGetPropertyIgnoreCase(firstDetail, "Phrase", out _);
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static void InheritWrapperEpisodeId(EpisodeDetailResult[] details, long wrapperEpisodeId)
+    {
+        if (wrapperEpisodeId <= 0)
+        {
+            return;
+        }
+
+        foreach (var detail in details)
+        {
+            // Some episode JSON exports omit EpisodeMasterId from every detail and
+            // keep the association only on the wrapper object. Zero is the
+            // deserializer default for that omitted field, not a conflicting ID.
+            if (detail is not null && detail.EpisodeMasterId == 0)
+            {
+                detail.EpisodeMasterId = wrapperEpisodeId;
+            }
+        }
+    }
+
     private static void Validate(EpisodeDetailResult[] details, long wrapperEpisodeId)
     {
         for (var i = 0; i < details.Length; i++)
@@ -129,6 +211,14 @@ public static class EpisodeCodec
                     $"EpisodeDetail[{i}].EpisodeMasterId={detail.EpisodeMasterId} 与外层 EpisodeId={wrapperEpisodeId} 不一致。" );
             }
         }
+    }
+}
+
+public sealed class UnsupportedEpisodeFormatException : Exception
+{
+    public UnsupportedEpisodeFormatException(string message)
+        : base(message)
+    {
     }
 }
 
