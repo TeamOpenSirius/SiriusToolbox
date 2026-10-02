@@ -11,6 +11,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sirius.Toolbox\Sirius.Toolbox.csproj" />
-    <ProjectReference Include="..\..\..\SiriusData\src\Sirius.MasterData\Sirius.MasterData.csproj" />
+    <PackageReference Include="Sirius.MasterData" />
   </ItemGroup>
 </Project>

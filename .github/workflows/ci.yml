@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   build-and-test:
@@ -23,43 +24,15 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      # Sirius.Protocol.dll is generated from the game client and is intentionally
-      # not committed. Configure these repository secrets when the workflow needs
-      # to build MasterTool and ToolboxUI on GitHub:
-      #   SIRIUS_PROTOCOL_DLL_URL      - private download URL
-      #   SIRIUS_PROTOCOL_DLL_TOKEN    - optional bearer token
-      #   SIRIUS_PROTOCOL_DLL_SHA256   - optional lowercase SHA-256 checksum
-      - name: Restore Sirius.Protocol dependency
+      - name: Authenticate GitHub Packages
         shell: pwsh
-        env:
-          PROTOCOL_URL: ${{ secrets.SIRIUS_PROTOCOL_DLL_URL }}
-          PROTOCOL_TOKEN: ${{ secrets.SIRIUS_PROTOCOL_DLL_TOKEN }}
-          PROTOCOL_SHA256: ${{ secrets.SIRIUS_PROTOCOL_DLL_SHA256 }}
-        run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE 'lib\Sirius.Protocol.dll'
-          New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
-          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
-            if ([string]::IsNullOrWhiteSpace($env:PROTOCOL_URL)) {
-              throw '缺少 lib/Sirius.Protocol.dll。请提交该文件，或配置 SIRIUS_PROTOCOL_DLL_URL（以及可选的 TOKEN/SHA256）仓库 Secret。'
-            }
-
-            $headers = @{}
-            if (-not [string]::IsNullOrWhiteSpace($env:PROTOCOL_TOKEN)) {
-              $headers.Authorization = "Bearer $($env:PROTOCOL_TOKEN)"
-            }
-            Invoke-WebRequest -Uri $env:PROTOCOL_URL -Headers $headers -OutFile $target
-          }
-
-          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
-            throw "协议程序集下载失败：$target"
-          }
-
-          if (-not [string]::IsNullOrWhiteSpace($env:PROTOCOL_SHA256)) {
-            $actual = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($actual -ne $env:PROTOCOL_SHA256.Trim().ToLowerInvariant()) {
-              throw "Sirius.Protocol.dll SHA-256 校验失败。期望=$($env:PROTOCOL_SHA256)，实际=$actual"
-            }
-          }
+        run: >-
+          dotnet nuget add source
+          https://nuget.pkg.github.com/TeamOpenSirius/index.json
+          --name github
+          --username ${{ github.actor }}
+          --password ${{ secrets.GITHUB_TOKEN }}
+          --store-password-in-clear-text
 
       - name: Run smoke test
         shell: pwsh

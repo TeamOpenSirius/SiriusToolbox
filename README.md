@@ -20,6 +20,14 @@ application entry point. There is no AssetTool or MasterTool command-line execut
 Shared MasterMemory models and editing code come from the sibling
 `E:\Ymst\Projects\SiriusData` repository. Models are not copied into this repository.
 
+### Package dependencies
+
+Toolbox consumes `Sirius.Protocol` and `Sirius.MasterData` from the TeamOpenSirius
+GitHub Packages feed. The repository `nuget.config` contains the feed and local
+sibling package fallback. GitHub Actions authenticates with `GITHUB_TOKEN`; local
+builds need a GitHub token with `read:packages` when the sibling package cache is
+not available.
+
 ### Build and run
 
 ```powershell
