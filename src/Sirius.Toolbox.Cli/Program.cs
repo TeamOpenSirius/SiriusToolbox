@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Sirius.MasterData;
 using Sirius.Toolbox.Charts;
 using Sirius.Toolbox.Episodes;
@@ -64,14 +65,18 @@ internal static class Cli
 
     private static int RunMaster(string[] args)
     {
-        if (args.Length < 2) return Usage("master verify|tables|export-text <database> [output]");
+        if (args.Length < 2) return Usage("master verify|tables|get|add|update|delete|export-text <database> ...");
         var db = args[1];
         return args[0] switch
         {
             "verify" => Verify(db),
             "tables" => Tables(db),
+            "get" when args.Length >= 4 => Get(db, args[2], args[3]),
+            "add" when args.Length >= 5 => WriteResult(MasterMemoryDatabaseService.AddRecord(db, args[2], ReadJson(args[3]), args[4]).OutputPath),
+            "update" when args.Length >= 6 => WriteResult(MasterMemoryDatabaseService.UpdateRecord(db, args[2], args[3], ReadJson(args[4]), args[5]).OutputPath),
+            "delete" when args.Length >= 5 => WriteResult(MasterMemoryDatabaseService.DeleteRecord(db, args[2], args[3], args[4]).OutputPath),
             "export-text" when args.Length >= 3 => WriteCount(MasterMemoryDatabaseService.ExportText(db, args[2], includeEmpty: false, japaneseOnly: false)),
-            _ => Usage("master verify|tables|export-text <database> [output]")
+            _ => Usage("master verify|tables|get|add|update|delete|export-text <database> ...")
         };
     }
 
@@ -96,9 +101,12 @@ internal static class Cli
         ? value : throw new InvalidOperationException($"missing environment variable {name}");
     private static int Verify(string db) { var v = MasterMemoryDatabaseService.Verify(db); Console.WriteLine($"tables={v.TableCount} rows={v.RowCount} sha256={v.Sha256}"); return 0; }
     private static int Tables(string db) { foreach (var t in MasterMemoryDatabaseService.GetTables(db)) Console.WriteLine($"{t.Name}\t{t.RowCount}\t{string.Join(',', t.PrimaryKey)}"); return 0; }
+    private static int Get(string db, string table, string key) { var record = MasterMemoryDatabaseService.GetRecord(db, table, key); Console.WriteLine(JsonSerializer.Serialize(record.Record)); return 0; }
     private static int InspectEpisode(EpisodeToolService service, string path) { var x = service.Inspect(path); Console.WriteLine($"decoded={x.Decoded} details={x.DetailCount}"); return x.Decoded ? 0 : 1; }
     private static int Write(string path) { Console.WriteLine(path); return 0; }
     private static int WriteCount(int count) { Console.WriteLine($"records={count}"); return 0; }
+    private static int WriteResult(string path) { Console.WriteLine(path); return 0; }
+    private static string ReadJson(string value) => File.Exists(value) ? File.ReadAllText(value) : value;
     private static int Usage(string text) { Console.Error.WriteLine($"usage: sirius-toolbox {text}"); return 2; }
     private static int Help() { Console.WriteLine("sirius-toolbox chart|episode|master|r2 ..."); return 0; }
 }
