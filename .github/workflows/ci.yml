@@ -29,7 +29,9 @@ jobs:
             throw 'Missing SIRIUSDATA_PACKAGES_TOKEN. Add a classic PAT with read:packages to repository Actions secrets.'
           }
           dotnet restore .\SiriusTools.sln --verbosity minimal
+          dotnet restore .\tests\Sirius.Toolbox.Tests\Sirius.Toolbox.Tests.csproj --verbosity minimal
           dotnet build .\SiriusTools.sln -c Release --no-restore
+          dotnet build .\tests\Sirius.Toolbox.Tests\Sirius.Toolbox.Tests.csproj -c Release --no-restore
           dotnet run --project .\tests\Sirius.Toolbox.Tests\Sirius.Toolbox.Tests.csproj -c Release --no-build --no-restore
       - name: Repository security scan
         shell: pwsh
