@@ -1,4 +1,4 @@
-name: Build and verify
+name: Build, test, and publish
 
 on:
   push:
@@ -24,16 +24,37 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Authenticate GitHub Packages
+      - name: Configure GitHub Packages credentials
         shell: pwsh
-        run: >-
-          dotnet nuget add source
-          https://nuget.pkg.github.com/TeamOpenSirius/index.json
-          --name github
-          --username ${{ github.actor }}
-          --password ${{ secrets.GITHUB_TOKEN }}
-          --store-password-in-clear-text
+        env:
+          NuGetPackageSourceCredentials_github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}
+        run: dotnet restore .\SiriusTools.sln
 
       - name: Run smoke test
         shell: pwsh
         run: .\scripts\smoke-test.ps1
+
+      - name: Publish CLI binaries
+        shell: pwsh
+        run: |
+          $rids = @('win-x64', 'linux-x64', 'osx-arm64')
+          foreach ($rid in $rids) {
+            dotnet publish .\src\Sirius.Toolbox.Cli\Sirius.Toolbox.Cli.csproj -c Release -r $rid --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ".\artifacts\cli-$rid"
+            Compress-Archive -Path ".\artifacts\cli-$rid\*" -DestinationPath ".\artifacts\sirius-toolbox-cli-$rid.zip" -Force
+          }
+
+      - name: Publish Windows UI
+        shell: pwsh
+        run: |
+          dotnet publish .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\artifacts\ui-win-x64
+          Compress-Archive -Path .\artifacts\ui-win-x64\* -DestinationPath .\artifacts\sirius-toolbox-ui-win-x64.zip -Force
+
+      - name: Repository security scan
+        shell: pwsh
+        run: python .\scripts\check-repository.py
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: sirius-toolbox-binaries
+          path: artifacts/*.zip

@@ -25,6 +25,8 @@ public sealed class MasterToolForm : Form
     private readonly ToolStripButton _newButton = new("新建");
     private readonly ToolStripButton _duplicateButton = new("复制");
     private readonly ToolStripButton _deleteButton = new("删除");
+    private readonly ToolStripButton _deleteSelectedButton = new("删除选中");
+    private readonly ToolStripButton _applyGridButton = new("应用修改");
 
     private readonly TextBox _tableFilterBox = new() { PlaceholderText = "筛选表...", Dock = DockStyle.Top };
     private readonly ListView _tableList = new()
@@ -42,10 +44,10 @@ public sealed class MasterToolForm : Form
         AllowUserToAddRows = false,
         AllowUserToDeleteRows = false,
         AllowUserToOrderColumns = true,
-        ReadOnly = true,
+        ReadOnly = false,
         RowHeadersVisible = false,
         SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-        MultiSelect = false,
+        MultiSelect = true,
         AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
         ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText
     };
@@ -77,6 +79,8 @@ public sealed class MasterToolForm : Form
     private readonly Button _resetEditorButton = new() { Text = "重置", AutoSize = true };
     private readonly TextBox _keyLookupBox = new() { Width = 260, PlaceholderText = "主键（例如 1001 或 Id=1001;Type=2）" };
     private readonly Button _keyLookupButton = new() { Text = "查询", AutoSize = true };
+    private readonly TextBox _findBox = new() { Width = 220, PlaceholderText = "查找文本 / 主键..." };
+    private readonly Button _findButton = new() { Text = "查找", AutoSize = true };
 
     private readonly Button _previousPageButton = new() { Text = "上一页", AutoSize = true };
     private readonly Button _nextPageButton = new() { Text = "下一页", AutoSize = true };
@@ -104,6 +108,15 @@ public sealed class MasterToolForm : Form
     private bool _editorIsNew;
     private bool _busy;
     private bool _suppressTableSelection;
+    private readonly Dictionary<(string Table, string Key, string Property), string> _pendingCellChanges = [];
+    private readonly Dictionary<(string Table, string Property), string> _pendingCellTypes = [];
+    private readonly HashSet<(string Table, string Key)> _pendingDeletes = [];
+    private readonly Dictionary<string, int> _savedColumnWidths = new(StringComparer.Ordinal);
+    private SplitContainer? _mainSplit;
+    private SplitContainer? _recordSplit;
+    private readonly string _layoutPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "SiriusToolbox", "master-editor-layout.json");
 
     public MasterToolForm(string? startupPath)
     {
@@ -116,6 +129,7 @@ public sealed class MasterToolForm : Form
 
         BuildUi();
         WireEvents();
+        LoadLayout();
         UpdateUiState();
     }
 
@@ -148,6 +162,7 @@ public sealed class MasterToolForm : Form
         }
 
         CleanupWorkingCopy();
+        SaveLayout();
         base.OnFormClosing(e);
     }
 
@@ -185,7 +200,9 @@ public sealed class MasterToolForm : Form
             new ToolStripSeparator(),
             _newButton,
             _duplicateButton,
-            _deleteButton
+            _deleteButton,
+            _deleteSelectedButton,
+            _applyGridButton
         ]);
 
         _tableList.Columns.Add("表", 215);
@@ -212,22 +229,22 @@ public sealed class MasterToolForm : Form
         tabs.TabPages.Add(BuildRecordsTab());
         tabs.TabPages.Add(BuildSchemaTab());
 
-        var split = new SplitContainer
+        _mainSplit = new SplitContainer
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
             SplitterDistance = 310,
             FixedPanel = FixedPanel.Panel1
         };
-        split.Panel1.Controls.Add(leftPanel);
-        split.Panel2.Controls.Add(tabs);
+        _mainSplit.Panel1.Controls.Add(leftPanel);
+        _mainSplit.Panel2.Controls.Add(tabs);
 
         var status = new StatusStrip { Dock = DockStyle.Bottom };
         status.Items.Add(_statusLabel);
         status.Items.Add(_progress);
         status.Items.Add(_fileLabel);
 
-        Controls.Add(split);
+        Controls.Add(_mainSplit);
         Controls.Add(status);
         Controls.Add(toolStrip);
         Controls.Add(menu);
@@ -253,6 +270,9 @@ public sealed class MasterToolForm : Form
         pagingPanel.Controls.Add(new Label { Text = "主键：", AutoSize = true, Padding = new Padding(18, 5, 0, 0) });
         pagingPanel.Controls.Add(_keyLookupBox);
         pagingPanel.Controls.Add(_keyLookupButton);
+        pagingPanel.Controls.Add(new Label { Text = "查找：", AutoSize = true, Padding = new Padding(18, 5, 0, 0) });
+        pagingPanel.Controls.Add(_findBox);
+        pagingPanel.Controls.Add(_findButton);
 
         var editorButtons = new FlowLayoutPanel
         {
@@ -270,17 +290,26 @@ public sealed class MasterToolForm : Form
         editorPanel.Controls.Add(_jsonEditor);
         editorPanel.Controls.Add(editorButtons);
 
-        var recordSplit = new SplitContainer
+        _recordSplit = new SplitContainer
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Horizontal
         };
+        var recordSplit = _recordSplit;
         recordSplit.Resize += (_, _) => ConfigureRecordSplitter(recordSplit);
-        recordSplit.Panel1.Controls.Add(_recordsGrid);
-        recordSplit.Panel1.Controls.Add(pagingPanel);
-        recordSplit.Panel2.Controls.Add(editorPanel);
+        _recordSplit.Panel1.Controls.Add(_recordsGrid);
+        _recordSplit.Panel1.Controls.Add(pagingPanel);
+        _recordSplit.Panel2.Controls.Add(editorPanel);
 
-        tab.Controls.Add(recordSplit);
+        var context = new ContextMenuStrip();
+        context.Items.Add("新建记录", null, (_, _) => BeginNewRecord(copySelected: false));
+        context.Items.Add("复制选中记录", null, (_, _) => BeginNewRecord(copySelected: true));
+        context.Items.Add("删除选中（待应用）", null, (_, _) => MarkSelectedForDeletion());
+        context.Items.Add(new ToolStripSeparator());
+        context.Items.Add("查找...", null, (_, _) => { _findBox.Focus(); });
+        _recordsGrid.ContextMenuStrip = context;
+
+        tab.Controls.Add(_recordSplit);
         return tab;
     }
 
@@ -325,7 +354,9 @@ public sealed class MasterToolForm : Form
         _refreshButton.Click += async (_, _) => await RefreshAllAsync();
         _newButton.Click += (_, _) => BeginNewRecord(copySelected: false);
         _duplicateButton.Click += (_, _) => BeginNewRecord(copySelected: true);
-        _deleteButton.Click += async (_, _) => await DeleteSelectedRecordAsync();
+        _deleteButton.Click += (_, _) => MarkSelectedForDeletion();
+        _deleteSelectedButton.Click += (_, _) => MarkSelectedForDeletion();
+        _applyGridButton.Click += async (_, _) => await ApplyGridChangesAsync();
 
         _tableFilterBox.TextChanged += (_, _) => ApplyTableFilter();
         _tableList.SelectedIndexChanged += async (_, _) =>
@@ -352,10 +383,31 @@ public sealed class MasterToolForm : Form
         };
 
         _recordsGrid.SelectionChanged += (_, _) => LoadSelectedRecordIntoEditor();
+        _recordsGrid.CellEndEdit += (_, e) => StageCellEdit(e.RowIndex, e.ColumnIndex);
+        _recordsGrid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.RowIndex >= _recordsGrid.Rows.Count) return;
+            if (_recordsGrid.Rows[e.RowIndex].Tag is MasterRecordView record
+                && _pendingDeletes.Contains((_currentTable ?? string.Empty, record.PrimaryKey)))
+            {
+                if (e.CellStyle is not null)
+                {
+                    e.CellStyle.BackColor = Color.MistyRose;
+                    e.CellStyle.ForeColor = Color.DarkRed;
+                }
+            }
+        };
         _recordsGrid.CellDoubleClick += (_, _) => _jsonEditor.Focus();
         _applyRecordButton.Click += async (_, _) => await ApplyEditorAsync();
         _resetEditorButton.Click += (_, _) => _jsonEditor.Text = _editorOriginalText;
         _keyLookupButton.Click += async (_, _) => await LookupRecordAsync();
+        _findButton.Click += async (_, _) => await FindAsync();
+        _findBox.KeyDown += async (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            e.SuppressKeyPress = true;
+            await FindAsync();
+        };
         _keyLookupBox.KeyDown += async (_, e) =>
         {
             if (e.KeyCode != Keys.Enter) return;
@@ -542,8 +594,11 @@ public sealed class MasterToolForm : Form
                 Name = "p_" + property.Name,
                 HeaderText = property.PrimaryKey ? property.Name + " [PK]" : property.Name,
                 Width = width,
-                Tag = property
+                Tag = property,
+                ReadOnly = property.PrimaryKey || !property.Writable
             });
+            if (_savedColumnWidths.TryGetValue("p_" + property.Name, out var savedWidth))
+                _recordsGrid.Columns[^1].Width = Math.Clamp(savedWidth, 60, 800);
         }
     }
 
@@ -583,6 +638,112 @@ public sealed class MasterToolForm : Form
         {
             ClearEditor();
         }
+    }
+
+    private void StageCellEdit(int rowIndex, int columnIndex)
+    {
+        if (rowIndex < 0 || columnIndex < 2 || rowIndex >= _recordsGrid.Rows.Count) return;
+        if (_currentTable is null || _recordsGrid.Rows[rowIndex].Tag is not MasterRecordView record) return;
+        if (_recordsGrid.Columns[columnIndex].Tag is not MasterSchemaProperty property || property.PrimaryKey || !property.Writable) return;
+
+        var text = Convert.ToString(_recordsGrid.Rows[rowIndex].Cells[columnIndex].Value) ?? string.Empty;
+        try
+        {
+            _ = ParseCellValue(text, property.Type);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"字段 {property.Name} 的值无效：{ex.Message}", "单元格校验失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            _recordsGrid.CancelEdit();
+            return;
+        }
+
+        _pendingCellChanges[(_currentTable, record.PrimaryKey, property.Name)] = text;
+        _pendingCellTypes[(_currentTable, property.Name)] = property.Type;
+        _recordsGrid.Rows[rowIndex].Cells[columnIndex].Style.BackColor = Color.LightYellow;
+        SetStatus($"已暂存修改：{_pendingCellChanges.Count} 项。点击“应用修改”统一写入。");
+        UpdateUiState();
+    }
+
+    private static JsonElement ParseCellValue(string text, string type)
+    {
+        text = text.Trim();
+        if (text.Length == 0 || string.Equals(text, "null", StringComparison.OrdinalIgnoreCase))
+            return JsonDocument.Parse("null").RootElement.Clone();
+        if (type.Contains("Boolean", StringComparison.OrdinalIgnoreCase))
+            return JsonDocument.Parse(bool.Parse(text) ? "true" : "false").RootElement.Clone();
+        if (type.Contains("Int", StringComparison.OrdinalIgnoreCase) || type.Contains("Long", StringComparison.OrdinalIgnoreCase)
+            || type.Contains("Single", StringComparison.OrdinalIgnoreCase) || type.Contains("Double", StringComparison.OrdinalIgnoreCase)
+            || type.Contains("Decimal", StringComparison.OrdinalIgnoreCase))
+            return JsonDocument.Parse(text).RootElement.Clone();
+        if (type.Contains("DateTime", StringComparison.OrdinalIgnoreCase))
+            return JsonDocument.Parse(JsonSerializer.Serialize(DateTime.Parse(text, System.Globalization.CultureInfo.InvariantCulture))).RootElement.Clone();
+        if (type.Contains("[]", StringComparison.Ordinal) || type.Contains("Array", StringComparison.OrdinalIgnoreCase)
+            || type.Contains("Master", StringComparison.OrdinalIgnoreCase) && text.StartsWith("[", StringComparison.Ordinal))
+            return JsonDocument.Parse(text).RootElement.Clone();
+        return JsonDocument.Parse(JsonSerializer.Serialize(text)).RootElement.Clone();
+    }
+
+    private void MarkSelectedForDeletion()
+    {
+        if (_currentTable is null) return;
+        foreach (DataGridViewRow row in _recordsGrid.SelectedRows)
+        {
+            if (row.Tag is not MasterRecordView record) continue;
+            _pendingDeletes.Add((_currentTable, record.PrimaryKey));
+            row.DefaultCellStyle.BackColor = Color.MistyRose;
+            row.DefaultCellStyle.ForeColor = Color.DarkRed;
+        }
+        SetStatus($"已标记删除 {_pendingDeletes.Count} 条记录，点击“应用修改”统一生效。");
+        UpdateUiState();
+    }
+
+    private async Task ApplyGridChangesAsync()
+    {
+        var workingPath = _workingPath;
+        if (workingPath is null || (_pendingCellChanges.Count == 0 && _pendingDeletes.Count == 0)) return;
+        var answer = MessageBox.Show(this,
+            $"将统一应用 {_pendingCellChanges.Count} 项单元格修改，并删除 {_pendingDeletes.Count} 条记录。继续吗？",
+            "应用待处理修改", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (answer != DialogResult.Yes) return;
+
+        await RunBusyAsync("正在统一应用表格修改并校验...", async () =>
+        {
+            var temp = workingPath + ".pending-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                File.Copy(workingPath, temp, overwrite: true);
+                foreach (var group in _pendingCellChanges.GroupBy(x => (x.Key.Table, x.Key.Key)))
+                {
+                    var patch = group.ToDictionary(x => x.Key.Property,
+                        x => (object?)ParseCellValue(x.Value, _pendingCellTypes.GetValueOrDefault((x.Key.Table, x.Key.Property), "String")));
+                    var next = temp + ".next";
+                    MasterMemoryDatabaseService.UpdateRecord(temp, group.Key.Table, group.Key.Key,
+                        JsonSerializer.Serialize(patch, EditorJson), next);
+                    File.Move(next, temp, overwrite: true);
+                }
+                foreach (var item in _pendingDeletes)
+                {
+                    var next = temp + ".next";
+                    MasterMemoryDatabaseService.DeleteRecord(temp, item.Table, item.Key, next);
+                    File.Move(next, temp, overwrite: true);
+                }
+                await Task.Run(() => MasterMemoryDatabaseService.Verify(temp));
+                File.Move(temp, workingPath, overwrite: true);
+                _pendingCellChanges.Clear();
+                _pendingCellTypes.Clear();
+                _pendingDeletes.Clear();
+                _dirty = true;
+                await RefreshTableListAsync(_currentTable);
+                await LoadTableAsync(_currentTable!, resetPage: false);
+                SetStatus("表格修改已统一应用。");
+            }
+            finally
+            {
+                if (File.Exists(temp)) File.Delete(temp);
+                if (File.Exists(temp + ".next")) File.Delete(temp + ".next");
+            }
+        });
     }
 
     private void PopulateSchemaGrid()
@@ -763,6 +924,44 @@ public sealed class MasterToolForm : Form
         });
     }
 
+    private async Task DeleteSelectedRecordsAsync()
+    {
+        var workingPath = _workingPath;
+        var table = _currentTable;
+        if (workingPath is null || table is null) return;
+
+        var keys = _recordsGrid.SelectedRows
+            .Cast<DataGridViewRow>()
+            .Select(row => row.Tag as MasterRecordView)
+            .Where(record => record is not null)
+            .Select(record => record!.PrimaryKey)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (keys.Length == 0) return;
+
+        var answer = MessageBox.Show(
+            this,
+            $"确定要从 {table} 中删除选中的 {keys.Length} 条记录吗？\r\n\r\n{string.Join("\r\n", keys.Take(20))}",
+            "删除选中记录",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+        if (answer != DialogResult.Yes) return;
+
+        await RunBusyAsync($"正在删除 {keys.Length} 条记录...", async () =>
+        {
+            await Task.Run(() =>
+            {
+                foreach (var key in keys)
+                    MasterMemoryDatabaseService.DeleteRecord(workingPath, table, key, workingPath);
+            });
+            _dirty = true;
+            await RefreshTableListAsync(table);
+            await LoadTableAsync(table, resetPage: false);
+            SetStatus($"已删除 {keys.Length} 条记录。");
+            UpdateUiState();
+        });
+    }
+
     private async Task LookupRecordAsync()
     {
         var workingPath = _workingPath;
@@ -780,6 +979,54 @@ public sealed class MasterToolForm : Form
             _editorOriginalText = _jsonEditor.Text;
             _editorModeLabel.Text = $"编辑：{record.PrimaryKey}（查询结果）";
             UpdateUiState();
+        });
+    }
+
+    private async Task FindAsync()
+    {
+        var workingPath = _workingPath;
+        var table = _currentTable;
+        var term = _findBox.Text.Trim();
+        if (workingPath is null || table is null || term.Length == 0) return;
+
+        await RunBusyAsync("正在查找记录...", async () =>
+        {
+            var pageSize = (int)_pageSizeBox.Value;
+            var found = await Task.Run(() =>
+            {
+                for (var offset = 0; offset < _totalRows; offset += pageSize)
+                {
+                    var records = MasterMemoryDatabaseService.ListRecords(workingPath, table, offset, pageSize);
+                    foreach (var record in records)
+                    {
+                        var json = JsonSerializer.Serialize(record.Record, CompactJson);
+                        if (record.PrimaryKey.Contains(term, StringComparison.OrdinalIgnoreCase)
+                            || json.Contains(term, StringComparison.OrdinalIgnoreCase))
+                            return (Offset: offset, Key: record.PrimaryKey);
+                    }
+                }
+                return (Offset: -1, Key: string.Empty);
+            });
+
+            if (found.Offset < 0)
+            {
+                SetStatus($"未找到：{term}");
+                return;
+            }
+
+            _offset = found.Offset;
+            await LoadPageAsync();
+            foreach (DataGridViewRow row in _recordsGrid.Rows)
+            {
+                if (row.Tag is MasterRecordView record && string.Equals(record.PrimaryKey, found.Key, StringComparison.Ordinal))
+                {
+                    _recordsGrid.ClearSelection();
+                    row.Selected = true;
+                    _recordsGrid.CurrentCell = row.Cells[0];
+                    break;
+                }
+            }
+            SetStatus($"已定位：{found.Key}");
         });
     }
 
@@ -898,6 +1145,8 @@ public sealed class MasterToolForm : Form
         _newButton.Enabled = !_busy && hasTable;
         _duplicateButton.Enabled = !_busy && hasRecord;
         _deleteButton.Enabled = !_busy && hasRecord;
+        _deleteSelectedButton.Enabled = !_busy && hasTable && _recordsGrid.SelectedRows.Count > 0;
+        _applyGridButton.Enabled = !_busy && hasDatabase && (_pendingCellChanges.Count > 0 || _pendingDeletes.Count > 0);
         _tableList.Enabled = !_busy && hasDatabase;
         _tableFilterBox.Enabled = !_busy && hasDatabase;
         _recordsGrid.Enabled = !_busy && hasTable;
@@ -906,6 +1155,8 @@ public sealed class MasterToolForm : Form
         _resetEditorButton.Enabled = !_busy && hasRecord;
         _keyLookupBox.Enabled = !_busy && hasTable;
         _keyLookupButton.Enabled = !_busy && hasTable;
+        _findBox.Enabled = !_busy && hasTable;
+        _findButton.Enabled = !_busy && hasTable;
         _pageSizeBox.Enabled = !_busy && hasTable;
         _progress.Visible = _busy;
         var sourcePath = _sourcePath;
@@ -933,6 +1184,58 @@ public sealed class MasterToolForm : Form
         finally
         {
             _workingDirectory = null;
+        }
+    }
+
+    private void LoadLayout()
+    {
+        try
+        {
+            if (!File.Exists(_layoutPath)) return;
+            using var document = JsonDocument.Parse(File.ReadAllText(_layoutPath));
+            var root = document.RootElement;
+            if (root.TryGetProperty("Width", out var width) && root.TryGetProperty("Height", out var height))
+                Size = new Size(Math.Max(MinimumSize.Width, width.GetInt32()), Math.Max(MinimumSize.Height, height.GetInt32()));
+            if (root.TryGetProperty("MainSplitter", out var main) && _mainSplit is not null)
+                _mainSplit.SplitterDistance = Math.Clamp(main.GetInt32(), _mainSplit.Panel1MinSize, Math.Max(_mainSplit.Panel1MinSize, _mainSplit.Width - _mainSplit.Panel2MinSize));
+            if (root.TryGetProperty("RecordSplitter", out var record) && _recordSplit is not null)
+                _recordSplit.SplitterDistance = Math.Clamp(record.GetInt32(), _recordSplit.Panel1MinSize, Math.Max(_recordSplit.Panel1MinSize, _recordSplit.Height - _recordSplit.Panel2MinSize));
+            if (root.TryGetProperty("Columns", out var columns) && columns.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in columns.EnumerateObject())
+                {
+                    if (property.Value.TryGetInt32(out var columnWidth))
+                        _savedColumnWidths[property.Name] = Math.Clamp(columnWidth, 60, 800);
+                }
+            }
+        }
+        catch
+        {
+            // A corrupt layout must never prevent the editor from opening.
+        }
+    }
+
+    private void SaveLayout()
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(_layoutPath)!;
+            Directory.CreateDirectory(directory);
+            var columns = _recordsGrid.Columns.Cast<DataGridViewColumn>()
+                .ToDictionary(column => column.Name, column => column.Width, StringComparer.Ordinal);
+            var data = new
+            {
+                Width,
+                Height,
+                MainSplitter = _mainSplit?.SplitterDistance ?? 0,
+                RecordSplitter = _recordSplit?.SplitterDistance ?? 0,
+                Columns = columns
+            };
+            File.WriteAllText(_layoutPath, JsonSerializer.Serialize(data, PrettyJson));
+        }
+        catch
+        {
+            // Layout persistence is optional and must not block closing.
         }
     }
 }

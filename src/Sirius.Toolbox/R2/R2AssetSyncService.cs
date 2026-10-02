@@ -7,8 +7,8 @@ namespace Sirius.Toolbox.R2;
 
 public sealed record R2SyncOptions(string RootDirectory)
 {
-    public string Endpoint { get; init; } = MasterDataR2UploadDefaults.Endpoint;
-    public string Bucket { get; init; } = MasterDataR2UploadDefaults.Bucket;
+    public string Endpoint { get; init; } = Environment.GetEnvironmentVariable("SIRIUS_R2_ENDPOINT") ?? MasterDataR2UploadDefaults.Endpoint;
+    public string Bucket { get; init; } = Environment.GetEnvironmentVariable("SIRIUS_R2_BUCKET") ?? MasterDataR2UploadDefaults.Bucket;
     public string? AccessKeyId { get; init; }
     public string? SecretAccessKey { get; init; }
     public string? SessionToken { get; init; }

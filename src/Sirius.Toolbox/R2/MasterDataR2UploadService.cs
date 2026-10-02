@@ -5,8 +5,8 @@ namespace Sirius.Toolbox.R2;
 
 public static class MasterDataR2UploadDefaults
 {
-    public const string Endpoint = "https://REMOVED_R2_ENDPOINT/wds";
-    public const string Bucket = "wds";
+    public const string Endpoint = "";
+    public const string Bucket = "";
     public const int MaxRetries = 5;
 }
 

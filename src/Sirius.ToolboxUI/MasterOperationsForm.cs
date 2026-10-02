@@ -145,6 +145,7 @@ public sealed class MasterOperationsForm : Form
     private static TabPage CreatePage(string title, Control content)
     {
         var page = new TabPage(title);
+        content.Dock = DockStyle.Fill;
         page.Controls.Add(content);
         return page;
     }

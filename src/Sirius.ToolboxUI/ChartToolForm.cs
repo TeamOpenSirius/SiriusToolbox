@@ -46,7 +46,7 @@ public sealed class ChartToolForm : Form
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(860, 600);
         Size = new Size(1080, 720);
-        _keyBox.Text = "REMOVED_SECRET";
+        _keyBox.Text = Environment.GetEnvironmentVariable("SIRIUS_CHART_KEY") ?? string.Empty;
 
         BuildUi();
         _operationBox.SelectedIndexChanged += (_, _) => UpdateOperationState();

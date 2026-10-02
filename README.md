@@ -3,16 +3,17 @@
 ## English
 
 Sirius Toolbox is the desktop tool suite for World Dai Star assets and MasterData.
-`Sirius.Toolbox` contains reusable implementations; `Sirius.ToolboxUI` is the only
-application entry point. There is no AssetTool or MasterTool command-line executable.
+`Sirius.Toolbox` contains reusable implementations. `Sirius.ToolboxUI` is the Windows
+desktop entry point and `Sirius.Toolbox.Cli` provides the same service layer for other
+platforms.
 
 ### Capabilities
 
 - convert SUS charts and encode/decode Sirius chart files;
 - pack, unpack, inspect, and edit Episode scene files;
 - build Version 2 `scene-assets.json` files with independent Episode JSON and scene BIN CDN prefixes;
-- download the official `mastermemory.db`, verify it through generated MasterMemory models, and export typed JSON;
-- mirror the complete official asset set incrementally: Addressables catalogs, catalog objects, static-assets, notations, and episode scenes, with `.part` resume, hash-cache reuse, and per-run added/unchanged/removed reporting;
+- verify, inspect, export, and edit local `mastermemory.db` files through generated MasterMemory models;
+- plan and publish local MasterData/CDN files incrementally to Cloudflare R2;
 - browse, add, update, duplicate, and delete MasterMemory records with validated atomic saves;
 - preview and publish MasterData, catalogs, scenes, notations, and other CDN files to Cloudflare R2;
 - use concurrent upload, retry, dry-run, remote SHA-256 checks, local hash reuse, custom directory mappings, and “only upload local changes” mode.
@@ -35,8 +36,9 @@ dotnet build .\SiriusTools.sln -c Release
 dotnet run --project .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj
 ```
 
-The start window provides separate tools for MasterData editing, official MasterData
-download, charts, Episodes, scene-index generation, Episode editing, and R2 publication.
+The start window provides MasterData editing, charts, Episodes, scene-index generation,
+Episode editing, and R2 publication. The CLI exposes the same service operations on
+Windows, Linux, and macOS.
 
 The R2 window accepts either the output root or its `assets` directory. Custom mappings
 use `local-directory=object-prefix`, for example
@@ -64,6 +66,7 @@ MasterMemory 模型与编辑实现来自同级 `E:\Ymst\Projects\SiriusData`，�
 ```powershell
 dotnet build .\SiriusTools.sln -c Release
 dotnet run --project .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj
+dotnet run --project .\src\Sirius.Toolbox.Cli\Sirius.Toolbox.Cli.csproj -- help
 ```
 
 R2 窗口可选择输出根目录或其中的 `assets` 目录。自定义映射格式为

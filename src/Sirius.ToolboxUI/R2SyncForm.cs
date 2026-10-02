@@ -78,10 +78,10 @@ public sealed class R2SyncForm : Form
         var saved = R2SettingsStore.Load();
         _rootDirectoryBox.Text = saved.RootDirectory;
         _endpointBox.Text = string.IsNullOrWhiteSpace(saved.Endpoint)
-            ? MasterDataR2UploadDefaults.Endpoint
+            ? Environment.GetEnvironmentVariable("SIRIUS_R2_ENDPOINT") ?? MasterDataR2UploadDefaults.Endpoint
             : saved.Endpoint;
         _bucketBox.Text = string.IsNullOrWhiteSpace(saved.Bucket)
-            ? MasterDataR2UploadDefaults.Bucket
+            ? Environment.GetEnvironmentVariable("SIRIUS_R2_BUCKET") ?? MasterDataR2UploadDefaults.Bucket
             : saved.Bucket;
         _prefixBox.Text = saved.KeyPrefix;
         _customMappingsBox.Text = saved.CustomMappings;

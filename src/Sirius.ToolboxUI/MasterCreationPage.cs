@@ -25,6 +25,8 @@ internal sealed class MasterCreationPage : UserControl
     {
         _getDatabasePath = getDatabasePath;
         _applyDraft = applyDraft;
+        Dock = DockStyle.Fill;
+        MinimumSize = new Size(0, 0);
         _kindBox.Items.AddRange(["音乐", "活动", "卡面"]);
         _kindBox.SelectedIndex = 0;
         BuildUi();
