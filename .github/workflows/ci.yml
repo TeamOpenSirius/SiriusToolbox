@@ -52,11 +52,12 @@ jobs:
           dotnet-version: 10.0.x
       - name: Restore
         shell: pwsh
-        run: dotnet restore .\src\Sirius.Toolbox.Cli\Sirius.Toolbox.Cli.csproj --verbosity minimal
+        run: dotnet restore .\src\Sirius.Toolbox.Cli\Sirius.Toolbox.Cli.csproj -r ${{ matrix.rid }} --verbosity minimal
       - name: Publish minimal CLI
         shell: pwsh
         run: |
           $out = ".\artifacts\cli-${{ matrix.rid }}"
+          New-Item -ItemType Directory -Force -Path .\artifacts | Out-Null
           dotnet publish .\src\Sirius.Toolbox.Cli\Sirius.Toolbox.Cli.csproj -c Release -r ${{ matrix.rid }} --no-restore --no-self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $out
           Compress-Archive -Path "$out\*" -DestinationPath ".\artifacts\sirius-toolbox-cli-${{ matrix.rid }}.zip" -Force
       - uses: actions/upload-artifact@v4
@@ -75,11 +76,12 @@ jobs:
           dotnet-version: 10.0.x
       - name: Restore
         shell: pwsh
-        run: dotnet restore .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj --verbosity minimal
+        run: dotnet restore .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj -r win-x64 --verbosity minimal
       - name: Publish minimal Windows UI
         shell: pwsh
         run: |
           $out = '.\artifacts\windows-ui'
+          New-Item -ItemType Directory -Force -Path .\artifacts | Out-Null
           dotnet publish .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj -c Release -r win-x64 --no-restore --no-self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $out
           Compress-Archive -Path "$out\*" -DestinationPath '.\artifacts\sirius-toolbox-windows.zip' -Force
       - uses: actions/upload-artifact@v4
