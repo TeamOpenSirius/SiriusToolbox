@@ -1,68 +1,109 @@
-name: Build, test, and publish
+name: Build and release
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: read
 
+env:
+  SIRIUSDATA_PACKAGES_TOKEN: ${{ secrets.SIRIUSDATA_PACKAGES_TOKEN }}
+  NuGetPackageSourceCredentials_github: Username=${{ secrets.SIRIUSDATA_PACKAGES_USERNAME || github.actor }};Password=${{ secrets.SIRIUSDATA_PACKAGES_TOKEN }}
+
 jobs:
-  build-and-test:
+  verify:
+    name: Verify source
     runs-on: windows-latest
-    env:
-      # A classic PAT with read:packages is required because Sirius.Data packages
-      # are owned by the TeamOpenSirius organization and may not grant access to
-      # this repository's GITHUB_TOKEN. Configure this repository secret in GitHub.
-      SIRIUSDATA_PACKAGES_TOKEN: ${{ secrets.SIRIUSDATA_PACKAGES_TOKEN }}
-      NuGetPackageSourceCredentials_github: Username=${{ secrets.SIRIUSDATA_PACKAGES_USERNAME || github.actor }};Password=${{ secrets.SIRIUSDATA_PACKAGES_TOKEN }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-
-      - name: Validate GitHub Packages credentials
+      - name: Restore and test
         shell: pwsh
         run: |
           if ([string]::IsNullOrWhiteSpace($env:SIRIUSDATA_PACKAGES_TOKEN)) {
-            throw 'Missing SIRIUSDATA_PACKAGES_TOKEN repository secret. Create a classic PAT with read:packages and grant this repository access to the Sirius.Data packages.'
+            throw 'Missing SIRIUSDATA_PACKAGES_TOKEN. Add a classic PAT with read:packages to repository Actions secrets.'
           }
           dotnet restore .\SiriusTools.sln --verbosity minimal
-
-      - name: Run smoke test
-        shell: pwsh
-        run: .\scripts\smoke-test.ps1
-
-      - name: Publish CLI binaries
-        shell: pwsh
-        run: |
-          $rids = @('win-x64', 'linux-x64', 'osx-arm64')
-          foreach ($rid in $rids) {
-            dotnet publish .\src\Sirius.Toolbox.Cli\Sirius.Toolbox.Cli.csproj -c Release -r $rid --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ".\artifacts\cli-$rid"
-            Compress-Archive -Path ".\artifacts\cli-$rid\*" -DestinationPath ".\artifacts\sirius-toolbox-cli-$rid.zip" -Force
-          }
-
-      - name: Publish Windows UI
-        shell: pwsh
-        run: |
-          dotnet publish .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\artifacts\ui-win-x64
-          Compress-Archive -Path .\artifacts\ui-win-x64\* -DestinationPath .\artifacts\sirius-toolbox-ui-win-x64.zip -Force
-
+          dotnet build .\SiriusTools.sln -c Release --no-restore
+          dotnet run --project .\tests\Sirius.Toolbox.Tests\Sirius.Toolbox.Tests.csproj -c Release --no-build --no-restore
       - name: Repository security scan
         shell: pwsh
         run: python .\scripts\check-repository.py
 
-      - name: Upload binaries
-        uses: actions/upload-artifact@v4
+  cli:
+    name: Release CLI (${{ matrix.rid }})
+    needs: verify
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, linux-x64, osx-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          name: sirius-toolbox-binaries
-          path: artifacts/*.zip
+          dotnet-version: 10.0.x
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore .\src\Sirius.Toolbox.Cli\Sirius.Toolbox.Cli.csproj --verbosity minimal
+      - name: Publish minimal CLI
+        shell: pwsh
+        run: |
+          $out = ".\artifacts\cli-${{ matrix.rid }}"
+          dotnet publish .\src\Sirius.Toolbox.Cli\Sirius.Toolbox.Cli.csproj -c Release -r ${{ matrix.rid }} --no-restore --no-self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $out
+          Compress-Archive -Path "$out\*" -DestinationPath ".\artifacts\sirius-toolbox-cli-${{ matrix.rid }}.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sirius-toolbox-cli-${{ matrix.rid }}
+          path: artifacts/sirius-toolbox-cli-${{ matrix.rid }}.zip
+
+  windows:
+    name: Release Windows UI
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj --verbosity minimal
+      - name: Publish minimal Windows UI
+        shell: pwsh
+        run: |
+          $out = '.\artifacts\windows-ui'
+          dotnet publish .\src\Sirius.ToolboxUI\Sirius.ToolboxUI.csproj -c Release -r win-x64 --no-restore --no-self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $out
+          Compress-Archive -Path "$out\*" -DestinationPath '.\artifacts\sirius-toolbox-windows.zip' -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sirius-toolbox-windows
+          path: artifacts/sirius-toolbox-windows.zip
+
+  release:
+    name: Create GitHub Release
+    if: github.event_name != 'pull_request'
+    needs: [cli, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sirius-toolbox-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish separate CLI and Windows assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="build-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" release-assets/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sirius Toolbox $tag" \
+            --notes "Separate minimal framework-dependent CLI and Windows UI builds."
