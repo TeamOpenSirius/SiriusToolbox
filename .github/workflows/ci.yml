@@ -15,7 +15,11 @@ jobs:
   build-and-test:
     runs-on: windows-latest
     env:
-      NuGetPackageSourceCredentials_github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}
+      # A classic PAT with read:packages is required because Sirius.Data packages
+      # are owned by the TeamOpenSirius organization and may not grant access to
+      # this repository's GITHUB_TOKEN. Configure this repository secret in GitHub.
+      SIRIUSDATA_PACKAGES_TOKEN: ${{ secrets.SIRIUSDATA_PACKAGES_TOKEN }}
+      NuGetPackageSourceCredentials_github: Username=${{ secrets.SIRIUSDATA_PACKAGES_USERNAME || github.actor }};Password=${{ secrets.SIRIUSDATA_PACKAGES_TOKEN }}
 
     steps:
       - name: Checkout
@@ -26,9 +30,13 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Configure GitHub Packages credentials
+      - name: Validate GitHub Packages credentials
         shell: pwsh
-        run: dotnet restore .\SiriusTools.sln
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIRIUSDATA_PACKAGES_TOKEN)) {
+            throw 'Missing SIRIUSDATA_PACKAGES_TOKEN repository secret. Create a classic PAT with read:packages and grant this repository access to the Sirius.Data packages.'
+          }
+          dotnet restore .\SiriusTools.sln --verbosity minimal
 
       - name: Run smoke test
         shell: pwsh
