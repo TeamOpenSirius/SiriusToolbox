@@ -11,23 +11,26 @@ using Sirius.Toolbox.Charts;
 using Sirius.Toolbox.Episodes;
 using Sirius.Toolbox.R2;
 using Sirius.Toolbox.Episodes.Protocol;
-using Sirius.Toolbox.Master.Sync;
 using Sirius.MasterData;
+using Sirius.Toolbox.Master.Creation;
 
 var root = Path.Combine(Path.GetTempPath(), "sirius-asset-tool-tests", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
 {
-    var invalidMasterSyncRejected = false;
-    try
+    var musicDraft = MasterCreationDefinitions.Music(900000, new Dictionary<string, object?>
     {
-        MasterDataSyncService.ValidateOptions(new MasterDataSyncOptions(string.Empty));
-    }
-    catch (ArgumentException)
-    {
-        invalidMasterSyncRejected = true;
-    }
-    Assert(invalidMasterSyncRejected, "MasterData sync accepted an empty output directory.");
+        ["Name"] = "自制音乐"
+    });
+    Assert(musicDraft.Records.Count == 1 && musicDraft.Records[0].TableName == "MusicMaster"
+        && Convert.ToInt64(musicDraft.Records[0].Fields["Id"]) == 900000,
+        "Music creation definition did not bind the primary key.");
+    var cardDraft = MasterCreationDefinitions.Card(900010, 900011,
+        new Dictionary<string, object?> { ["Name"] = "自制卡面" },
+        new Dictionary<string, object?> { ["Name"] = "自制角色" });
+    Assert(cardDraft.Records.Count == 2
+        && Convert.ToInt64(cardDraft.Records[1].Fields["CharacterBaseMasterId"]) == 900011,
+        "Card creation definition did not bind CharacterBaseMasterId.");
 
     var input = Path.Combine(root, "测试谱面.sus");
     var output = Path.Combine(root, "输出.txt");

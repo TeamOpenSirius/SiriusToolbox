@@ -11,7 +11,7 @@ instance of each tool window:
   `mastermemory.db` against an unmodified baseline; tables that match the baseline or
   decode to the same values keep their original payload block, so untouched tables are
   byte-for-byte identical and only edited tables are re-encoded;
-- official MasterData sync: authentication, resumable download, generated-model
+- local MasterData editing: authentication, resumable download, generated-model
   verification, manifest/state/publication output, optional typed JSON export, and
   incremental CDN asset mirroring;
 - Chart and Episode tools;
@@ -67,7 +67,7 @@ values. The end-to-end workflow is also described in the server repository's
 R2 窗口默认仅预览，支持并发、重试、强制上传、远端长度/SHA-256 检查、DPAPI
 保护的凭据、自定义目录映射和“仅上传本地变更”。
 
-## 官方 MasterData / CDN 同步窗口
+## 本地 MasterData / CDN / R2 发布窗口
 
 窗口分两个页签。**账号与主数据** 页包含 API 地址、客户端版本、注册名、平台、
 GameVersion、FM、登录/访问令牌、输出目录，以及强制重下主数据、导出类型化 JSON、

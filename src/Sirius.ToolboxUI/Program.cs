@@ -16,13 +16,12 @@ internal static class Program
                 .Select(static button => button.Text)
                 .ToArray();
             if (toolLabels.Count(static text => text.StartsWith("主数据 / CDN 全量同步", StringComparison.Ordinal)) != 1 ||
-                toolLabels.Count(static text => text.StartsWith("官方 MasterData / CDN 同步", StringComparison.Ordinal)) != 1 ||
                 toolLabels.Count(static text => text.StartsWith("主数据离线重打包", StringComparison.Ordinal)) != 1 ||
                 toolLabels.Any(static text => text.StartsWith("主数据上传", StringComparison.Ordinal)) ||
                 toolLabels.Count(static text => text.Contains("全量同步", StringComparison.Ordinal)) != 1)
             {
                 throw new InvalidOperationException(
-                    "首页必须同时提供“主数据 / CDN 全量同步”（本地发布到 R2）与“官方 MasterData / CDN 同步”（官方下载）入口。");
+                    "首页必须提供本地 MasterData / CDN / R2 发布入口。");
             }
 
             using var master = new MasterToolForm(null);
@@ -40,27 +39,6 @@ internal static class Program
 
             using var editor = new EpisodeEditorForm();
             using var sync = new R2SyncForm();
-            using var masterSync = new MasterDataSyncForm();
-            var masterSyncLayout = masterSync.Controls.OfType<TableLayoutPanel>().SingleOrDefault();
-            if (masterSyncLayout is null ||
-                masterSyncLayout.RowCount != 3 ||
-                !masterSyncLayout.Controls.OfType<TabControl>().Any() ||
-                !masterSyncLayout.Controls.OfType<FlowLayoutPanel>().Any() ||
-                !masterSyncLayout.Controls.OfType<RichTextBox>().Any())
-            {
-                throw new InvalidOperationException("官方同步窗口必须使用互不重叠的选项、操作和日志三段式布局。");
-            }
-            var syncLabels = FindControls<Label>(masterSync)
-                .Select(static label => label.Text)
-                .ToArray();
-            if (!syncLabels.Contains("资源分类：", StringComparer.Ordinal) ||
-                !syncLabels.Contains("catalog 模板：", StringComparer.Ordinal) ||
-                !syncLabels.Contains("User-Agent：", StringComparer.Ordinal) ||
-                !syncLabels.Contains("认证版本后缀：", StringComparer.Ordinal))
-            {
-                throw new InvalidOperationException("官方同步窗口缺少 CDN 资源镜像选项。");
-            }
-
             using var repack = new MasterMemoryRepackForm();
             var repackLabels = FindControls<Label>(repack)
                 .Select(static label => label.Text)

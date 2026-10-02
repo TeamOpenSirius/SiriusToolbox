@@ -71,14 +71,14 @@ public sealed class ToolboxHomeForm : Form
         editorButton.Click += (_, _) => OpenEpisodeEditor();
         var syncButton = CreateToolButton("主数据 / CDN 全量同步", "同步 MasterData、目录清单和 CDN 资源");
         syncButton.Click += (_, _) => OpenR2Sync();
-        var downloadButton = CreateToolButton(
-            "官方 MasterData / CDN 同步",
-            "注册认证、下载校验主数据、增量镜像 CDN 资源");
-        downloadButton.Click += (_, _) => OpenMasterDataSync();
         var repackButton = CreateToolButton(
             "主数据离线重打包",
             "导出 JSON、编辑后重建 mastermemory.db，未改动表保持字节一致");
         repackButton.Click += (_, _) => OpenRepack();
+        var operationsButton = CreateToolButton(
+            "MasterData 运营编辑器",
+            "可视化维护活动、交换商店、卡池、乐曲及关联期限");
+        operationsButton.Click += (_, _) => OpenMasterOperations();
 
         var buttons = new TableLayoutPanel
         {
@@ -101,8 +101,8 @@ public sealed class ToolboxHomeForm : Form
         buttons.Controls.Add(cacheButton, 0, 1);
         buttons.Controls.Add(editorButton, 1, 1);
         buttons.Controls.Add(syncButton, 2, 1);
-        buttons.Controls.Add(downloadButton, 0, 2);
-        buttons.Controls.Add(repackButton, 1, 2);
+        buttons.Controls.Add(repackButton, 0, 2);
+        buttons.Controls.Add(operationsButton, 1, 2);
 
         var layout = new TableLayoutPanel
         {
@@ -135,6 +135,9 @@ public sealed class ToolboxHomeForm : Form
     private MasterToolForm OpenMasterTool(string? startupPath)
         => OpenChild("master", () => new MasterToolForm(startupPath));
 
+    private MasterOperationsForm OpenMasterOperations()
+        => OpenChild("master-operations", static () => new MasterOperationsForm());
+
     private ChartToolForm OpenChartTool()
         => OpenChild("chart", static () => new ChartToolForm());
 
@@ -149,9 +152,6 @@ public sealed class ToolboxHomeForm : Form
 
     private R2SyncForm OpenR2Sync()
         => OpenChild("r2-sync", static () => new R2SyncForm());
-
-    private MasterDataSyncForm OpenMasterDataSync()
-        => OpenChild("master-sync", static () => new MasterDataSyncForm());
 
     private MasterMemoryRepackForm OpenRepack()
         => OpenChild("master-repack", static () => new MasterMemoryRepackForm());
