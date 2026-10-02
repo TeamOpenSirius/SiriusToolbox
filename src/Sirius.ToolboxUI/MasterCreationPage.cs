@@ -17,6 +17,8 @@ internal sealed class MasterCreationPage : UserControl
     private readonly Button _previewButton = new() { AutoSize = true, Text = "预览" };
     private readonly Button _createButton = new() { AutoSize = true, Text = "创建并写入" };
     private readonly RichTextBox _resultBox = new() { Dock = DockStyle.Fill, ReadOnly = true };
+    private readonly TabControl _fieldTabs = new() { Dock = DockStyle.Fill };
+    private readonly TabPage _baseFieldsTab = new("基础角色");
     private MasterCreationDraft? _preview;
 
     public MasterCreationPage(Func<string?> getDatabasePath, Func<MasterCreationDraft, Task> applyDraft)
@@ -34,38 +36,46 @@ internal sealed class MasterCreationPage : UserControl
 
     private void BuildUi()
     {
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8), WrapContents = false };
-        top.Controls.Add(new Label { Text = "创建类型", AutoSize = true, Padding = new Padding(0, 6, 6, 0) });
-        top.Controls.Add(_kindBox);
-        top.Controls.Add(new Label { Text = "主 ID", AutoSize = true, Padding = new Padding(12, 6, 6, 0) });
-        top.Controls.Add(_idBox);
-        top.Controls.Add(new Label { Text = "基础 ID（卡面）", AutoSize = true, Padding = new Padding(12, 6, 6, 0) });
-        top.Controls.Add(_baseIdBox);
-        top.Controls.Add(_skipResourceBox);
-        top.Controls.Add(_previewButton);
-        top.Controls.Add(_createButton);
+        var top = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 6,
+            RowCount = 2,
+            Height = 74,
+            Padding = new Padding(8),
+            Margin = Padding.Empty
+        };
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        top.Controls.Add(new Label { Text = "创建类型", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+        top.Controls.Add(_kindBox, 1, 0);
+        top.Controls.Add(new Label { Text = "主 ID", AutoSize = true, Anchor = AnchorStyles.Left }, 2, 0);
+        top.Controls.Add(_idBox, 3, 0);
+        top.Controls.Add(new Label { Text = "基础 ID", AutoSize = true, Anchor = AnchorStyles.Left }, 4, 0);
+        top.Controls.Add(_baseIdBox, 5, 0);
+        top.Controls.Add(_skipResourceBox, 0, 1);
+        top.SetColumnSpan(_skipResourceBox, 2);
+        top.Controls.Add(_previewButton, 4, 1);
+        top.Controls.Add(_createButton, 5, 1);
 
-        var editors = new TableLayoutPanel
+        var main = new SplitContainer
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 4,
-            Padding = new Padding(8)
+            Orientation = Orientation.Vertical
         };
-        editors.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
-        editors.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-        editors.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        editors.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
-        editors.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        editors.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
-        editors.Controls.Add(new Label { Text = "主记录字段（可视化）", AutoSize = true }, 0, 0);
-        editors.Controls.Add(new Label { Text = "预览与校验结果", AutoSize = true }, 1, 0);
-        editors.Controls.Add(_fieldsGrid, 0, 1);
-        editors.Controls.Add(_resultBox, 1, 1);
-        editors.Controls.Add(new Label { Text = "卡面基础角色字段（仅卡面）", AutoSize = true }, 0, 2);
-        editors.Controls.Add(_baseFieldsGrid, 0, 3);
-        editors.SetColumnSpan(_baseFieldsGrid, 2);
-        Controls.Add(editors);
+        var mainTab = new TabPage("主记录");
+        mainTab.Controls.Add(_fieldsGrid);
+        _baseFieldsTab.Controls.Add(_baseFieldsGrid);
+        _fieldTabs.TabPages.Add(mainTab);
+        _fieldTabs.TabPages.Add(_baseFieldsTab);
+        main.Panel1.Controls.Add(_fieldTabs);
+        main.Panel2.Controls.Add(_resultBox);
+        SplitContainerLayout.ConfigureWhenSized(main, Orientation.Vertical, 420, 300, 720);
+        Controls.Add(main);
         Controls.Add(top);
         PopulateFields();
     }
@@ -74,7 +84,12 @@ internal sealed class MasterCreationPage : UserControl
     {
         var card = string.Equals(_kindBox.SelectedItem?.ToString(), "卡面", StringComparison.Ordinal);
         _baseIdBox.Visible = card;
-        _baseFieldsGrid.Visible = card;
+        if (card && !_fieldTabs.TabPages.Contains(_baseFieldsTab)) _fieldTabs.TabPages.Add(_baseFieldsTab);
+        if (!card && _fieldTabs.TabPages.Contains(_baseFieldsTab))
+        {
+            if (_fieldTabs.SelectedTab == _baseFieldsTab) _fieldTabs.SelectedIndex = 0;
+            _fieldTabs.TabPages.Remove(_baseFieldsTab);
+        }
         PopulateFields();
     }
 
