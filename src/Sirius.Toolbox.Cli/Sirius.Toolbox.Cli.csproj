@@ -11,4 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Sirius.Toolbox\Sirius.Toolbox.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
 </Project>

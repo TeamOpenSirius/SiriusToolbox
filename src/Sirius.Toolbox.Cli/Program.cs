@@ -1,112 +1,39 @@
-using System.Globalization;
-using System.Text;
+using System.CommandLine;
 using System.Text.Json;
 using Sirius.MasterData;
 using Sirius.Toolbox.Charts;
 using Sirius.Toolbox.Episodes;
-using Sirius.Toolbox.Master.Operations;
 using Sirius.Toolbox.R2;
 
-return await Cli.RunAsync(args);
+return await Cli.Build().Parse(args).InvokeAsync();
 
 internal static class Cli
 {
-    public static async Task<int> RunAsync(string[] args)
+    public static RootCommand Build()
     {
-        try
-        {
-            if (args.Length == 0 || args[0] is "help" or "--help" or "-h") return Help();
-            return args[0].ToLowerInvariant() switch
-            {
-                "chart" => RunChart(args[1..]),
-                "episode" => RunEpisode(args[1..]),
-                "master" => RunMaster(args[1..]),
-                "r2" => await RunR2Async(args[1..]),
-                _ => Help()
-            };
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"error: {ex.Message}");
-            return 1;
-        }
+        var root = new RootCommand("Sirius Toolbox CLI：MasterMemory、谱面、Episode 和 R2 工作流。");
+        root.Add(BuildChart()); root.Add(BuildEpisode()); root.Add(BuildMaster()); root.Add(BuildR2());
+        root.SetAction(_ => { Console.WriteLine("Sirius Toolbox CLI 1.0.0"); return 0; }); return root;
     }
-
-    private static int RunChart(string[] args)
+    private static Command BuildChart()
     {
-        if (args.Length == 1 && args[0] == "self-test")
-        {
-            Console.WriteLine(new ChartToolService().SelfTest().EncodedLength);
-            return 0;
-        }
-        if (args.Length < 3) return Usage("chart text <input.sus> <output.txt> [--strict]");
-        var service = new ChartToolService();
-        if (args[0] == "text")
-        {
-            var result = service.ConvertToText(args[1], args[2], new ChartConvertOptions(false, args.Contains("--strict")));
-            Console.WriteLine($"wrote {result.OutputPath} ({result.NoteCount} notes)");
-            return 0;
-        }
-        return Usage("chart text <input.sus> <output.txt>");
+        var c = new Command("chart", "转换和自测 Sirius 谱面文件。"); var text = new Command("text", "将 SUS 谱面转换为文本。"); var i = new Argument<string>("input"); var o = new Argument<string>("output"); var strict = new Option<bool>("--strict", "严格模式"); text.Add(i); text.Add(o); text.Add(strict); text.SetAction(p => { var x = new ChartToolService().ConvertToText(p.GetValue(i)!, p.GetValue(o)!, new ChartConvertOptions(false, p.GetValue(strict))); Console.WriteLine($"已写入 {x.OutputPath}（{x.NoteCount} 个音符）"); return 0; }); var self = new Command("self-test", "运行谱面加解密自测。"); self.SetAction(_ => { Console.WriteLine($"自测通过，编码长度：{new ChartToolService().SelfTest().EncodedLength}"); return 0; }); c.Add(text); c.Add(self); return c;
     }
-
-    private static int RunEpisode(string[] args)
+    private static Command BuildEpisode()
     {
-        if (args.Length < 2) return Usage("episode pack|unpack|inspect <input> <output>");
-        var service = new EpisodeToolService();
-        return args[0] switch
-        {
-            "pack" => Write(service.Pack(args[1], args[2], overwrite: true).OutputPath),
-            "unpack" => Write(service.Unpack(args[1], args[2], overwrite: true).OutputPath),
-            "inspect" => InspectEpisode(service, args[1]),
-            _ => Usage("episode pack|unpack|inspect <input> <output>")
-        };
+        var c = new Command("episode", "打包、解包和检查 Episode 文件。"); var i = new Argument<string>("input"); var o = new Argument<string>("output"); var pack = new Command("pack", "JSON 打包为 BIN"); pack.Add(i); pack.Add(o); pack.SetAction(p => { Console.WriteLine(new EpisodeToolService().Pack(p.GetValue(i)!, p.GetValue(o)!, true).OutputPath); return 0; }); var unpack = new Command("unpack", "BIN 解包为 JSON"); unpack.Add(i); unpack.Add(o); unpack.SetAction(p => { Console.WriteLine(new EpisodeToolService().Unpack(p.GetValue(i)!, p.GetValue(o)!, true).OutputPath); return 0; }); var inspect = new Command("inspect", "检查 BIN"); inspect.Add(i); inspect.SetAction(p => { var x = new EpisodeToolService().Inspect(p.GetValue(i)!); Console.WriteLine($"decoded={x.Decoded} details={x.DetailCount}"); return x.Decoded ? 0 : 1; }); c.Add(pack); c.Add(unpack); c.Add(inspect); return c;
     }
-
-    private static int RunMaster(string[] args)
+    private static Command BuildMaster()
     {
-        if (args.Length < 2) return Usage("master verify|tables|get|add|update|delete|export-text <database> ...");
-        var db = args[1];
-        return args[0] switch
-        {
-            "verify" => Verify(db),
-            "tables" => Tables(db),
-            "get" when args.Length >= 4 => Get(db, args[2], args[3]),
-            "add" when args.Length >= 5 => WriteResult(MasterMemoryDatabaseService.AddRecord(db, args[2], ReadJson(args[3]), args[4]).OutputPath),
-            "update" when args.Length >= 6 => WriteResult(MasterMemoryDatabaseService.UpdateRecord(db, args[2], args[3], ReadJson(args[4]), args[5]).OutputPath),
-            "delete" when args.Length >= 5 => WriteResult(MasterMemoryDatabaseService.DeleteRecord(db, args[2], args[3], args[4]).OutputPath),
-            "export-text" when args.Length >= 3 => WriteCount(MasterMemoryDatabaseService.ExportText(db, args[2], includeEmpty: false, japaneseOnly: false)),
-            _ => Usage("master verify|tables|get|add|update|delete|export-text <database> ...")
-        };
+        var c = new Command("master", "验证和编辑 MasterMemory 数据库。"); var db = new Argument<string>("database"); var table = new Argument<string>("table"); var key = new Argument<string>("key"); var json = new Argument<string>("json"); var output = new Argument<string>("output"); var verify = new Command("verify", "验证数据库"); verify.Add(db); verify.SetAction(p => { var x = MasterMemoryDatabaseService.Verify(p.GetValue(db)!); Console.WriteLine($"表={x.TableCount} 行={x.RowCount} SHA-256={x.Sha256}"); return 0; }); var tables = new Command("tables", "列出表"); tables.Add(db); tables.SetAction(p => { foreach (var x in MasterMemoryDatabaseService.GetTables(p.GetValue(db)!)) Console.WriteLine($"{x.Name}\t{x.RowCount}\t{string.Join(',', x.PrimaryKey)}"); return 0; }); var get = new Command("get", "读取记录"); get.Add(db); get.Add(table); get.Add(key); get.SetAction(p => { Console.WriteLine(JsonSerializer.Serialize(MasterMemoryDatabaseService.GetRecord(p.GetValue(db)!, p.GetValue(table)!, p.GetValue(key)!).Record)); return 0; }); var add = new Command("add", "添加记录"); add.Add(db); add.Add(table); add.Add(json); add.Add(output); add.SetAction(p => { Console.WriteLine(MasterMemoryDatabaseService.AddRecord(p.GetValue(db)!, p.GetValue(table)!, File.ReadAllText(p.GetValue(json)!), p.GetValue(output)!).OutputPath); return 0; }); var update = new Command("update", "更新记录"); update.Add(db); update.Add(table); update.Add(key); update.Add(json); update.Add(output); update.SetAction(p => { Console.WriteLine(MasterMemoryDatabaseService.UpdateRecord(p.GetValue(db)!, p.GetValue(table)!, p.GetValue(key)!, File.ReadAllText(p.GetValue(json)!), p.GetValue(output)!).OutputPath); return 0; }); var delete = new Command("delete", "删除记录"); delete.Add(db); delete.Add(table); delete.Add(key); delete.Add(output); delete.SetAction(p => { Console.WriteLine(MasterMemoryDatabaseService.DeleteRecord(p.GetValue(db)!, p.GetValue(table)!, p.GetValue(key)!, p.GetValue(output)!).OutputPath); return 0; }); var export = new Command("export-text", "导出文本脱敏/翻译 CSV"); export.Add(db); export.Add(output); export.SetAction(p => { Console.WriteLine($"记录数={MasterMemoryDatabaseService.ExportText(p.GetValue(db)!, p.GetValue(output)!, false, false)}"); return 0; }); c.Add(verify); c.Add(tables); c.Add(get); c.Add(add); c.Add(update); c.Add(delete); c.Add(export); return c;
     }
-
-    private static async Task<int> RunR2Async(string[] args)
+    private static Command BuildR2()
     {
-        if (args.Length < 2 || args[0] is not ("plan" or "sync")) return Usage("r2 plan|sync <directory>");
-        var options = new R2SyncOptions(Path.GetFullPath(args[1]))
-        {
-            Endpoint = RequiredEnvironment("SIRIUS_R2_ENDPOINT"),
-            Bucket = RequiredEnvironment("SIRIUS_R2_BUCKET"),
-            AccessKeyId = RequiredEnvironment("R2_ACCESS_KEY_ID"),
-            SecretAccessKey = RequiredEnvironment("R2_SECRET_ACCESS_KEY"),
-            SessionToken = Environment.GetEnvironmentVariable("R2_SESSION_TOKEN"),
-            DryRun = args[0] == "plan"
-        };
-        var result = await new R2AssetSyncService().SyncAsync(options, new Progress<R2SyncProgress>(x => Console.WriteLine(x.Message)));
-        Console.WriteLine($"objects={result.ObjectCount} uploaded={result.UploadedCount} skipped={result.SkippedCount}");
-        return 0;
+        var c = new Command("r2", "规划或执行 R2 同步。"); var d = new Argument<string>("directory"); var plan = new Command("plan", "仅生成计划"); plan.Add(d); plan.SetAction(async p => await RunR2(p.GetValue(d)!, true)); var sync = new Command("sync", "执行同步"); sync.Add(d); sync.SetAction(async p => await RunR2(p.GetValue(d)!, false)); c.Add(plan); c.Add(sync); return c;
     }
-
-    private static string RequiredEnvironment(string name) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value
-        ? value : throw new InvalidOperationException($"missing environment variable {name}");
-    private static int Verify(string db) { var v = MasterMemoryDatabaseService.Verify(db); Console.WriteLine($"tables={v.TableCount} rows={v.RowCount} sha256={v.Sha256}"); return 0; }
-    private static int Tables(string db) { foreach (var t in MasterMemoryDatabaseService.GetTables(db)) Console.WriteLine($"{t.Name}\t{t.RowCount}\t{string.Join(',', t.PrimaryKey)}"); return 0; }
-    private static int Get(string db, string table, string key) { var record = MasterMemoryDatabaseService.GetRecord(db, table, key); Console.WriteLine(JsonSerializer.Serialize(record.Record)); return 0; }
-    private static int InspectEpisode(EpisodeToolService service, string path) { var x = service.Inspect(path); Console.WriteLine($"decoded={x.Decoded} details={x.DetailCount}"); return x.Decoded ? 0 : 1; }
-    private static int Write(string path) { Console.WriteLine(path); return 0; }
-    private static int WriteCount(int count) { Console.WriteLine($"records={count}"); return 0; }
-    private static int WriteResult(string path) { Console.WriteLine(path); return 0; }
-    private static string ReadJson(string value) => File.Exists(value) ? File.ReadAllText(value) : value;
-    private static int Usage(string text) { Console.Error.WriteLine($"usage: sirius-toolbox {text}"); return 2; }
-    private static int Help() { Console.WriteLine("sirius-toolbox chart|episode|master|r2 ..."); return 0; }
+    private static async Task<int> RunR2(string directory, bool dryRun)
+    {
+        var o = new R2SyncOptions(Path.GetFullPath(directory)) { Endpoint = Required("SIRIUS_R2_ENDPOINT"), Bucket = Required("SIRIUS_R2_BUCKET"), AccessKeyId = Required("R2_ACCESS_KEY_ID"), SecretAccessKey = Required("R2_SECRET_ACCESS_KEY"), SessionToken = Environment.GetEnvironmentVariable("R2_SESSION_TOKEN"), DryRun = dryRun }; var x = await new R2AssetSyncService().SyncAsync(o, new Progress<R2SyncProgress>(p => Console.WriteLine(p.Message))); Console.WriteLine($"对象={x.ObjectCount} 上传={x.UploadedCount} 跳过={x.SkippedCount}"); return 0;
+    }
+    private static string Required(string name) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : throw new InvalidOperationException($"缺少环境变量：{name}");
 }
