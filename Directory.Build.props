@@ -21,4 +21,8 @@
     <PublishTrimmed>false</PublishTrimmed>
     <PublishAot>false</PublishAot>
   </PropertyGroup>
+  <PropertyGroup>
+    <UseSiriusDataRollingPackages Condition="'$(UseSiriusDataRollingPackages)' == ''">true</UseSiriusDataRollingPackages>
+    <SiriusProtocolPackageVersion>*-*</SiriusProtocolPackageVersion>
+  </PropertyGroup>
 </Project>

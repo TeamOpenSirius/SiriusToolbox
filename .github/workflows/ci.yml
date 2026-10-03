@@ -7,11 +7,6 @@ on:
 
 permissions:
   contents: write
-  packages: read
-
-env:
-  SIRIUSDATA_PACKAGES_TOKEN: ${{ secrets.SIRIUSDATA_PACKAGES_TOKEN }}
-  NuGetPackageSourceCredentials_github: Username=${{ secrets.SIRIUSDATA_PACKAGES_USERNAME || github.actor }};Password=${{ secrets.SIRIUSDATA_PACKAGES_TOKEN }}
 
 jobs:
   verify:
@@ -25,9 +20,6 @@ jobs:
       - name: Restore and test
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:SIRIUSDATA_PACKAGES_TOKEN)) {
-            throw 'Missing SIRIUSDATA_PACKAGES_TOKEN. Add a classic PAT with read:packages to repository Actions secrets.'
-          }
           dotnet restore .\SiriusTools.sln --verbosity minimal
           dotnet restore .\tests\Sirius.Toolbox.Tests\Sirius.Toolbox.Tests.csproj --verbosity minimal
           dotnet build .\SiriusTools.sln -c Release --no-restore
@@ -35,7 +27,10 @@ jobs:
           dotnet run --project .\tests\Sirius.Toolbox.Tests\Sirius.Toolbox.Tests.csproj -c Release --no-build --no-restore
       - name: Repository security scan
         shell: pwsh
-        run: python .\scripts\check-repository.py
+        run: |
+          python .\tests\verify-rolling-feed.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\scripts\check-repository.py
 
   cli:
     name: Release CLI (${{ matrix.rid }})

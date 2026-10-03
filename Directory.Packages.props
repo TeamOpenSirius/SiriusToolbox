@@ -7,8 +7,8 @@
     <PackageVersion Include="MagicOnion.Abstractions" Version="6.1.7" />
     <PackageVersion Include="MasterMemory" Version="3.0.4" />
     <PackageVersion Include="MessagePack" Version="3.1.8" />
-    <PackageVersion Include="Sirius.Protocol" Version="*" />
-    <PackageVersion Include="Sirius.MasterData" Version="*" />
+    <PackageVersion Include="Sirius.Protocol" Version="*-*" />
+    <PackageVersion Include="Sirius.MasterData" Version="*-*" />
     <PackageVersion Include="System.CommandLine" Version="2.0.0" />
   </ItemGroup>
 </Project>

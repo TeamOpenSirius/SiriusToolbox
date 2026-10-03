@@ -282,25 +282,17 @@ flowchart TD
 
 ## SiriusData Packages
 
-Shared WDS models are consumed through TeamOpenSirius GitHub Packages:
-
-- `Sirius.Protocol`
-- `Sirius.MasterData`
-
-`nuget.config` maps `Sirius.*` to:
-
-```text
-https://nuget.pkg.github.com/TeamOpenSirius/index.json
-```
-
-Local builds therefore need credentials with `read:packages` access to the TeamOpenSirius feed. GitHub Actions uses repository secrets for package restore.
+Shared WDS models use the public SiriusData **latest Release** assets with `*-*`
+versions. Each restore fetches packages into project-local feeds/caches. No GitHub
+Packages credentials or sibling checkout are needed.
+See [rolling restore](docs/rolling-packages.md).
 
 ## Build from Source
 
 Requirements:
 
 - .NET 10 SDK;
-- TeamOpenSirius GitHub Packages read access;
+- Network access to GitHub Releases and nuget.org;
 - Windows for the WinForms UI;
 - Windows, Linux, or macOS for the CLI.
 

@@ -268,25 +268,16 @@ flowchart TD
 
 ## SiriusData Packages
 
-共享 WDS Model 通过 TeamOpenSirius GitHub Packages 提供：
-
-- `Sirius.Protocol`
-- `Sirius.MasterData`
-
-仓库 `nuget.config` 将 `Sirius.*` 映射到：
-
-```text
-https://nuget.pkg.github.com/TeamOpenSirius/index.json
-```
-
-因此本地源码构建需要拥有 `read:packages` 权限的 GitHub 凭据。GitHub Actions 同样通过仓库 Secret 完成 Package Restore。
+共享 WDS 模型自动下载 SiriusData 公开 latest Release 包，版本 `*-*` 包含 ci
+预发布版。每次还原更新各项目 obj 临时源和缓存，不需要令牌或同级源码。
+详见[自动还原说明](docs/rolling-packages.md)。
 
 ## 源码构建
 
 环境：
 
 - .NET 10 SDK；
-- TeamOpenSirius GitHub Packages 读取权限；
+- 可访问 GitHub Releases 和 nuget.org；
 - WinForms UI 需要 Windows；
 - CLI 支持 Windows / Linux / macOS。
 

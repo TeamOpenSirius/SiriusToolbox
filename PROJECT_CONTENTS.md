@@ -22,12 +22,12 @@ executable entry point. There is no AssetTool or MasterTool command-line executa
   ToolboxUI distribution binary.
 - `scripts/smoke-test.ps1`: restores, builds, runs the service harness and the
   `--self-test-ui` harness, and checks the Release executable.
-- `lib/Sirius.Protocol.dll`: fallback protocol/MasterMemory models used when the sibling
-  `SiriusData` repository is not present.
+- `Directory.Build.targets`: downloads and validates public SiriusData rolling
+  Release packages into per-project obj feeds/caches before restore.
 
-Shared MasterMemory models and the typed edit/export/rebuild layer live in the sibling
-`E:\Ymst\Projects\SiriusData` repository (`Sirius.Protocol` and `Sirius.MasterData`).
-This repository does not copy those models.
+Shared protocol models and typed MasterMemory editing live in the independent
+SiriusData repository. This repository consumes their rolling packages and does
+not require a sibling checkout or a fallback DLL. See docs/rolling-packages.md.
 
 ## Capability summary
 

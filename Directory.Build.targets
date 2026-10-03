@@ -1,0 +1,70 @@
+<Project>
+  <!-- Evaluate after the project body, so projects may opt out in their own PropertyGroup. -->
+  <PropertyGroup Condition="'$(UseSiriusDataRollingPackages)' == 'true'">
+    <SiriusDataRollingFeed>$(MSBuildProjectDirectory)/obj/siriusdata-feed</SiriusDataRollingFeed>
+    <SiriusDataRollingCache>$(MSBuildProjectDirectory)/obj/siriusdata-packages</SiriusDataRollingCache>
+    <RestoreAdditionalProjectSources>$(RestoreAdditionalProjectSources);$(SiriusDataRollingFeed)</RestoreAdditionalProjectSources>
+    <RestorePackagesPath>$(SiriusDataRollingCache)</RestorePackagesPath>
+    <RestoreForceEvaluate>true</RestoreForceEvaluate>
+  </PropertyGroup>
+
+  <UsingTask TaskName="PrepareSiriusDataRollingFeed" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Feed ParameterType="System.String" Required="true" />
+      <Staging ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Compression" />
+      <Using Namespace="System.Linq" />
+      <Using Namespace="System.Xml.Linq" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var ids = new[] { "Sirius.Protocol", "Sirius.MasterData" };
+        var versions = new string[2];
+        for (int i = 0; i < ids.Length; i++) {
+          using (var zip = new ZipArchive(File.OpenRead(Path.Combine(Staging, ids[i] + ".nupkg")), ZipArchiveMode.Read)) {
+            var entry = zip.Entries.Single(e => e.FullName.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase));
+            using (var stream = entry.Open()) {
+              var metadata = XDocument.Load(stream).Root.Elements().Single(e => e.Name.LocalName == "metadata");
+              var id = metadata.Elements().Single(e => e.Name.LocalName == "id").Value;
+              var version = metadata.Elements().Single(e => e.Name.LocalName == "version").Value;
+              if (id != ids[i] || string.IsNullOrWhiteSpace(version) ||
+                  !version.All(c => ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) || c == '.' || c == '-' || c == '+'))
+                throw new InvalidDataException("Unexpected rolling package identity.");
+              versions[i] = version;
+            }
+          }
+        }
+        if (versions[0] != versions[1])
+          throw new InvalidDataException("Rolling packages have different versions; release may be updating. Retry restore.");
+        Directory.CreateDirectory(Feed);
+        foreach (var old in Directory.GetFiles(Feed, "*.nupkg")) File.Delete(old);
+        for (int i = 0; i < ids.Length; i++)
+          File.Copy(Path.Combine(Staging, ids[i] + ".nupkg"), Path.Combine(Feed, ids[i] + "." + versions[i] + ".nupkg"));
+        File.WriteAllText(Path.Combine(Feed, "resolved-version.txt"), versions[0] + Environment.NewLine);
+        Log.LogMessage(Microsoft.Build.Framework.MessageImportance.High, "SiriusData rolling version: {0}", versions[0]);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- Run for each project in the restore graph, before NuGet reads its local sources.
+       BeforeTargets=Restore alone misses dependent projects in solution restore. -->
+  <Target Name="FetchLatestSiriusDataPackages" BeforeTargets="_GetRestoreSettings"
+          Condition="'$(UseSiriusDataRollingPackages)' == 'true'">
+    <PropertyGroup>
+      <_SiriusDataStaging>$(MSBuildProjectDirectory)/obj/siriusdata-download</_SiriusDataStaging>
+    </PropertyGroup>
+    <Message Text="Fetching SiriusData rolling packages for $(MSBuildProjectName)..." Importance="high" />
+    <MakeDir Directories="$(_SiriusDataStaging)" />
+    <DownloadFile SourceUrl="https://github.com/TeamOpenSirius/SiriusData/releases/download/latest/Sirius.Protocol.nupkg"
+                  DestinationFolder="$(_SiriusDataStaging)" DestinationFileName="Sirius.Protocol.nupkg"
+                  SkipUnchangedFiles="false" Retries="3" RetryDelayMilliseconds="1000" />
+    <DownloadFile SourceUrl="https://github.com/TeamOpenSirius/SiriusData/releases/download/latest/Sirius.MasterData.nupkg"
+                  DestinationFolder="$(_SiriusDataStaging)" DestinationFileName="Sirius.MasterData.nupkg"
+                  SkipUnchangedFiles="false" Retries="3" RetryDelayMilliseconds="1000" />
+    <PrepareSiriusDataRollingFeed Feed="$(SiriusDataRollingFeed)" Staging="$(_SiriusDataStaging)" />
+    <RemoveDir Directories="$(SiriusDataRollingCache)/sirius.protocol;$(SiriusDataRollingCache)/sirius.masterdata" />
+  </Target>
+</Project>
